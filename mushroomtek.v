@@ -1,4 +1,4 @@
-// v -prod -gc boehm -prealloc -skip-unused -d no_backtrace -d no_debug -cc clang -cflags "-O3 -flto -fPIE -fstack-protector-all -fstack-clash-protection -D_FORTIFY_SOURCE=3 -fno-ident -fno-common -fwrapv -ftrivial-auto-var-init=zero -fvisibility=hidden -Wformat -Wformat-security -Werror=format-security" -ldflags "-pie -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack -Wl,-z,separate-code -Wl,--gc-sections -Wl,--icf=all -Wl,--build-id=none" mushroomtek_pro.v -o mushroomtek_pro && strip --strip-all --remove-section=.comment --remove-section=.note --remove-section=.gnu.version mushroomtek_pro
+v -prod -gc boehm -prealloc -skip-unused -d no_backtrace -d no_debug -cc clang -cflags "-O2 -fPIE -fno-stack-protector -fno-ident -fno-common -fvisibility=hidden" -ldflags "-pie -Wl,-z,relro -Wl,-z,now -Wl,--gc-sections -Wl,--build-id=none" mushroomtek.v -o mushroomtek && strip --strip-all --remove-section=.comment --remove-section=.note --remove-section=.gnu.version mushroomtek
 
 import os
 import time
@@ -63,23 +63,36 @@ fn main() {
 	}
 	if whitelist.len == 0 { whitelist << '0' }
 
-	println('${term.green('System Ready.')} Commands: next, list, +123, -123')
+	println('${term.green('System Ready.')}')
+	println('Commands:')
+	println('  next      -> Skip timer')
+	println('  >1850     -> Force connect to EARFCN 1850 immediately')
+	println('  +1850     -> Add to loop list')
+	println('  -1850     -> Remove from loop list')
+	
+	mut manual_target := ''
 
 	for {
-		if whitelist.len == 0 { whitelist << '0' }
-		target := rand.element(whitelist) or { whitelist[0] }
-		
-		println('\n${term.bold('>>>')} Locking: Band + EARFCN ${term.green(target)}')
+		mut target := ''
+		if manual_target != '' {
+			target = manual_target
+			manual_target = ''
+			println('\n${term.bold('>>>')} ${term.red('MANUAL OVERRIDE:')} Locking to ${term.green(target)}')
+		} else {
+			if whitelist.len == 0 { whitelist << '0' }
+			target = rand.element(whitelist) or { whitelist[0] }
+			println('\n${term.bold('>>>')} Auto Loop: Locking to ${term.green(target)}')
+		}
 
 		for m in active_modems {
 			send(m, 'AT+ERAT=3')
 			send(m, band_lock_mask)
-			time.sleep(1000 * time.millisecond)
-			send(m, 'AT+EMMCHLCK=1,7,0,${target},0,0')
+			time.sleep(500 * time.millisecond)
+			send(m, 'AT+EMMCHLCK=1,7,0,${target},0,3') 
 		}
 
 		delay := rand.int_in_range(900, 2700) or { 1200 }
-		println('Locked. Waiting ${delay / 60} mins. (Type command anytime)')
+		println('Locked. Waiting ${delay / 60} mins.')
 
 		start_time := time.now()
 		
@@ -88,21 +101,29 @@ fn main() {
 			
 			if has_input() {
 				cmd := os.get_raw_line().trim_space()
+				
 				if cmd == 'next' {
 					println('Skipping timer...')
 					break
 				} else if cmd == 'list' {
 					println('${term.blue('Whitelist:')} ${whitelist}')
+				} else if cmd.starts_with('>') {
+					val := cmd[1..].trim_space()
+					if val.len > 0 {
+						manual_target = val
+						println('${term.yellow('Command received:')} Jumping to ${val}...')
+						break
+					}
 				} else if cmd.starts_with('+') {
 					new_val := cmd[1..]
 					if new_val !in whitelist {
 						whitelist << new_val
-						println('${term.green('Added:')} ${new_val}')
+						println('${term.green('Added to list:')} ${new_val}')
 					}
 				} else if cmd.starts_with('-') {
 					del_val := cmd[1..]
 					whitelist = whitelist.filter(it != del_val)
-					println('${term.red('Removed:')} ${del_val}')
+					println('${term.red('Removed from list:')} ${del_val}')
 				}
 			}
 			
@@ -113,6 +134,6 @@ fn main() {
 		for m in active_modems {
 			send(m, 'AT+EMMCHLCK=0')
 		}
-		time.sleep(3 * time.second)
+		time.sleep(2 * time.second)
 	}
 }
