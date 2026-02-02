@@ -89,7 +89,7 @@ fn main() {
 			send(m, 'AT+ERAT=3')
 			send(m, band_lock_mask)
 			time.sleep(500 * time.millisecond)
-			send(m, 'AT+EMMCHLCK=1,7,0,${target},0,3') 
+			send(m, 'AT+EMMCHLCK=1,7,0,${target},,3') 
 		}
 
 		delay := rand.int_in_range(900, 2700) or { 1200 }
