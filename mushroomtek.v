@@ -15,7 +15,7 @@ struct C.pollfd {
 
 fn C.poll(fds &C.pollfd, nfds u32, timeout int) int
 
-const band_lock_mask = 'AT+EPBSE=154,155,0,128,0,0,0,0,0,0'
+const band_lock_mask = 'AT+EPBSE=154,155,4,0,0,0,0,0,0,0'
 const band_unlock_mask = 'AT+EPBSE=154,155,168165599,928,0,0,0,0,0,0'
 
 fn send(path string, cmd string) {
@@ -49,7 +49,7 @@ fn main() {
 		println('\n${term.yellow('Emergency Exit... Restoring Bands.')}')
 		for m in active_modems {
 			send(m, 'AT+EMMCHLCK=0')
-			//send(m, band_unlock_mask)
+			send(m, band_unlock_mask)
 		}
 		exit(0)
 	}) or {}
@@ -73,7 +73,7 @@ fn main() {
 
 		for m in active_modems {
 			send(m, 'AT+ERAT=3')
-			//send(m, band_lock_mask)
+			send(m, band_lock_mask)
 			time.sleep(1000 * time.millisecond)
 			send(m, 'AT+EMMCHLCK=1,7,0,${target},0,0')
 		}
