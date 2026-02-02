@@ -51,6 +51,7 @@ fn main() {
 			send(m, 'AT+EMMCHLCK=0')
 			send(m, band_unlock_mask)
 			send(m, 'AT+ERAT=0')
+			send(m, 'AT+CEMODE=0')
 		}
 		exit(0)
 	}) or {}
@@ -87,6 +88,7 @@ fn main() {
 
 		for m in active_modems {
 			send(m, 'AT+ERAT=3')
+			send(m, 'AT+CEMODE=2')
 			send(m, band_lock_mask)
 			time.sleep(500 * time.millisecond)
 			send(m, 'AT+EMMCHLCK=1,7,0,${target},,3') 
