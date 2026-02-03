@@ -48,6 +48,8 @@ fn main() {
 	os.signal_opt(.int, fn [active_modems] (_ os.Signal) {
 		println('\n${term.yellow('Emergency Exit... Restoring Bands.')}')
 		for m in active_modems {
+			send(m, 'AT+ESBP=1,6,1')
+			send(m, 'AT+CURC=1')
 			send(m, 'AT+EMMCHLCK=0')
 			send(m, band_unlock_mask)
 			send(m, 'AT+ERAT=0')
@@ -87,6 +89,8 @@ fn main() {
 		}
 
 		for m in active_modems {
+			send(m, 'AT+ESBP=1,6,0')
+			send(m, 'AT+CURC=0')
 			send(m, 'AT+ERAT=3')
 			send(m, 'AT+CEMODE=2')
 			send(m, band_lock_mask)
