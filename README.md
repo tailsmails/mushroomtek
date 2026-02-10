@@ -1,3 +1,4 @@
+![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)
 # 🍄 MushroomTek (MTK Network Stealth Utility)
 
 **MushroomTek** is a network privacy and modem manipulation tool specifically designed for **MediaTek (MTK)** chipsets. It leverages low-level AT commands to enforce cellular privacy, prevent carrier-side triangulation, and optimize LTE connectivity in high-interference environments.
