@@ -45,31 +45,42 @@ fn has_input() bool {
 	return res > 0
 }
 
-fn rule() {
-	println(term.dim('  ────────────────────────────────────────'))
+fn hr() {
+	println(term.dim('  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'))
+}
+
+fn header() {
+	println('')
+	println(term.bold(term.magenta('       __  ___           __                   ')))
+	println(term.bold(term.magenta('      /  |/  /_  _______/ /_  _________  ____ ')))
+	println(term.bold(term.magenta('     / /|_/ / / / / ___/ __ \\/ ___/ __ \\/ __ \\')))
+	println(term.bold(term.magenta('    / /  / / /_/ (__  ) / / / /  / /_/ / /_/ /')))
+	println(term.bold(term.magenta('   /_/  /_/\\__,_/____/_/ /_/_/   \\____/\\____/ ')))
+	println(term.bold(term.magenta('                                    ') + term.dim('tek v1.0')))
+	println('')
+	hr()
+	println('')
 }
 
 fn main() {
-	println('')
-	println(term.bold(term.cyan('  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')))
-	println(term.bold('        ⚡  EARFCN Band Locker  ⚡'))
-	println(term.bold(term.cyan('  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')))
-	println('')
+	header()
 
 	mut active_modems := []string{}
 	if os.exists('/dev/radio/atci1') { active_modems << '/dev/radio/atci1' }
 
-	print('  ${term.bold(term.yellow('?'))} Protect SIM2? ${term.dim('[y/n]')} ${term.dim('›')} ')
+	print('  ${term.bold('?')} Protect SIM2? ${term.dim('y/n')} > ')
 	sim2 := os.input('')
 	if os.exists('/dev/radio/atci2') && sim2 == 'y' { active_modems << '/dev/radio/atci2' }
 
 	if active_modems.len == 0 {
-		println('  ${term.bold(term.red('✗'))} ${term.red('No radio interfaces found.')}')
+		println('  ${term.red('x')} No radio interfaces found.')
 		exit(1)
 	}
 
 	os.signal_opt(.int, fn [active_modems] (_ os.Signal) {
-		println('\n  ${term.bold(term.yellow('⚠  Emergency Exit — Restoring Bands…'))}')
+		println('')
+		hr()
+		println('  ${term.yellow('!')} Restoring bands...')
 		for m in active_modems {
 			send(m, 'AT+ESBP=1,6,1')
 			send(m, 'AT+CURC=1')
@@ -78,12 +89,12 @@ fn main() {
 			send(m, 'AT+ERAT=0')
 			send(m, 'AT+CEMODE=0')
 		}
-		println('  ${term.green('✔')} ${term.dim('Bands restored.')}')
+		println('  ${term.green('*')} Done.')
+		hr()
 		exit(0)
 	}) or {}
 
-	rule()
-	print('  ${term.bold(term.blue('◈'))} Enter EARFCNs ${term.dim('(e.g. 1234,56789)')} ${term.dim('›')} ')
+	print('  ${term.bold('?')} EARFCNs ${term.dim('(e.g. 1234,5678)')} > ')
 	user_input := os.input('')
 	mut whitelist := []string{}
 	for rp in user_input.split(',') {
@@ -92,18 +103,18 @@ fn main() {
 	}
 	if whitelist.len == 0 { whitelist << '0' }
 
-	rule()
 	println('')
-	println('  ${term.bold(term.green('✔'))} ${term.bold('System Online')}')
+	hr()
 	println('')
-	println(term.bold('  ┌─── Commands ─────────────────────────'))
-	println('  ${term.bold('│')}   ${term.cyan('next')}        ${term.dim('Skip current timer')}')
-	println('  ${term.bold('│')}   ${term.cyan('>earfcn')}     ${term.dim('Force lock to EARFCN')}')
-	println('  ${term.bold('│')}   ${term.cyan('+earfcn')}     ${term.dim('Add EARFCN to list')}')
-	println('  ${term.bold('│')}   ${term.cyan('-earfcn')}     ${term.dim('Remove EARFCN from list')}')
-	println('  ${term.bold('│')}   ${term.cyan('list')}        ${term.dim('Show current whitelist')}')
-	println(term.bold('  └─────────────────────────────────────'))
+	println('  ${term.bold(term.green('*'))} ${term.bold('mushroomtek ready')}')
 	println('')
+	println('  ${term.dim('next')}       ${term.dim('skip timer')}')
+	println('  ${term.dim('>earfcn')}    ${term.dim('force lock')}')
+	println('  ${term.dim('+earfcn')}    ${term.dim('add to list')}')
+	println('  ${term.dim('-earfcn')}    ${term.dim('remove from list')}')
+	println('  ${term.dim('list')}       ${term.dim('show whitelist')}')
+	println('')
+	hr()
 
 	mut manual_target := ''
 
@@ -112,11 +123,13 @@ fn main() {
 		if manual_target != '' {
 			target = manual_target
 			manual_target = ''
-			println('\n  ${term.bold(term.red('⚡ MANUAL'))}  ${term.dim('→')}  Locking to ${term.bold(term.green(target))}')
+			println('')
+			println('  ${term.bold(term.red('MANUAL'))} >> ${term.bold(target)}')
 		} else {
 			if whitelist.len == 0 { whitelist << '0' }
 			target = rand.element(whitelist) or { whitelist[0] }
-			println('\n  ${term.bold(term.blue('↻ AUTO'))}    ${term.dim('→')}  Locking to ${term.bold(term.green(target))}')
+			println('')
+			println('  ${term.bold(term.cyan('AUTO'))}   >> ${term.bold(target)}')
 		}
 
 		for m in active_modems {
@@ -130,7 +143,7 @@ fn main() {
 		}
 
 		delay := rand.int_in_range(900, 2700) or { 1200 }
-		println('  ${term.dim('◷ Locked ·')} waiting ${term.bold('${delay / 60}')} min')
+		println('  ${term.dim('hold')} ${delay / 60}${term.dim('m')}')
 
 		start_time := time.now()
 
@@ -141,38 +154,38 @@ fn main() {
 				cmd := os.get_raw_line().trim_space()
 
 				if cmd == 'next' {
-					println('  ${term.yellow('⏭')} Skipping…')
+					println('  ${term.yellow('>')} skip')
 					break
 				} else if cmd == 'list' {
-					println('  ${term.blue('◈')} ${term.bold('Whitelist:')} ${whitelist}')
+					println('  ${term.cyan('*')} ${whitelist}')
 				} else if cmd.starts_with('>') {
 					val := cmd[1..].trim_space()
 					if val.len > 0 {
 						manual_target = val
-						println('  ${term.yellow('⚡')} Jumping to ${term.bold(val)}')
+						println('  ${term.yellow('>')} jump ${term.bold(val)}')
 						break
 					}
 				} else if cmd.starts_with('+') {
 					new_val := cmd[1..]
 					if new_val !in whitelist {
 						whitelist << new_val
-						println('  ${term.green('✚')} Added ${term.bold(new_val)}')
+						println('  ${term.green('+')} ${new_val}')
 					}
 				} else if cmd.starts_with('-') {
 					del_val := cmd[1..]
 					whitelist = whitelist.filter(it != del_val)
-					println('  ${term.red('✗')} Removed ${term.bold(del_val)}')
+					println('  ${term.red('-')} ${del_val}')
 				}
 			}
 
 			time.sleep(200 * time.millisecond)
 		}
 
-		println('  ${term.dim('⟳ Rotating…')}')
+		println('  ${term.dim('rotating...')}')
 		for m in active_modems {
 			send(m, 'AT+EMMCHLCK=0')
 		}
 		time.sleep(2 * time.second)
-		rule()
+		hr()
 	}
 }
