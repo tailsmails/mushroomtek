@@ -9,9 +9,7 @@
 //    GNU General Public License for more details.
 //
 //    You should have received a copy of the GNU General Public License
-//    along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
-// v -prod -gc boehm -prealloc -skip-unused -d no_backtrace -d no_debug -cc clang -cflags "-O2 -fPIE -fno-stack-protector -fno-ident -fno-common -fvisibility=hidden" -ldflags "-pie -Wl,-z,relro -Wl,-z,now -Wl,--gc-sections -Wl,--build-id=none" mushroomtek.v -o mushroomtek && strip --strip-all --remove-section=.comment --remove-section=.note --remove-section=.gnu.version --remove-section=.note.ABI-tag --remove-section=.note.gnu.build-id --remove-section=.note.android.ident --remove-section=.eh_frame --remove-section=.eh_frame_hdr mushroomtek
+//    along with this program.  If not, see https://www.gnu.org/licenses/.
 
 import os
 import time
@@ -31,7 +29,6 @@ fn C.poll(fds &C.pollfd, nfds u32, timeout int) int
 const band_lock_mask = 'AT+EPBSE=154,155,4,0,0,0,0,0,0,0'
 const save_path = '/data/local/tmp/hopper.list'
 const log_path = '/data/local/tmp/hopper.log'
-const resp_path = '/data/local/tmp/at_resp'
 const blacklist_path = '/data/local/tmp/hopper.blacklist'
 const history_path = '/data/local/tmp/hopper.history'
 
@@ -46,7 +43,11 @@ mut:
 
 struct TrustReport {
 	score   int
-	reasons []string
+	reasons[]string
+}
+
+fn get_resp_path(path string) string {
+	return '/data/local/tmp/at_resp' + path.replace('/', '_')
 }
 
 fn send(path string, cmd string) {
@@ -54,12 +55,13 @@ fn send(path string, cmd string) {
 }
 
 fn query(path string, cmd string) string {
-	os.rm(resp_path) or {}
-	os.system('timeout 4 cat ' + path + ' > ' + resp_path + ' &')
+	r_path := get_resp_path(path)
+	os.rm(r_path) or {}
+	os.system('timeout 4 cat ' + path + ' > ' + r_path + ' &')
 	time.sleep(300 * time.millisecond)
 	send(path, cmd)
 	time.sleep(2 * time.second)
-	result := os.read_file(resp_path) or { return '' }
+	result := os.read_file(r_path) or { return '' }
 	return result.trim_space()
 }
 
@@ -76,8 +78,9 @@ fn get_default_band(path string) string {
 
 fn get_cell_state(path string) CellState {
 	mut state := CellState{rat: -1, rssi: -1}
-	os.rm(resp_path) or {}
-	os.system('timeout 6 cat ' + path + ' > ' + resp_path + ' &')
+	r_path := get_resp_path(path)
+	os.rm(r_path) or {}
+	os.system('timeout 6 cat ' + path + ' > ' + r_path + ' &')
 	time.sleep(300 * time.millisecond)
 	send(path, 'AT+CEREG?')
 	time.sleep(400 * time.millisecond)
@@ -87,7 +90,7 @@ fn get_cell_state(path string) CellState {
 	time.sleep(400 * time.millisecond)
 	send(path, 'AT+CSQ')
 	time.sleep(1500 * time.millisecond)
-	resp := os.read_file(resp_path) or { return state }
+	resp := os.read_file(r_path) or { return state }
 	for line in resp.split_into_lines() {
 		l := line.trim_space()
 		if (l.starts_with('+CGREG:') || l.starts_with('+CEREG:')) && state.lac.len == 0 {
@@ -150,7 +153,7 @@ fn rat_name(rat int) string {
 	}
 }
 
-fn check_anomalies(prev CellState, curr CellState, modems []string) {
+fn check_anomalies(prev CellState, curr CellState, modems[]string) {
 	if prev.lac.len == 0 {
 		return
 	}
@@ -188,8 +191,8 @@ fn check_jamming(prev_count int, curr_count int) {
 	if prev_count < 0 {
 		return
 	}
-	if prev_count >= 4 && curr_count <= 1 {
-		msg := 'Possible JAMMING neighbors: ' + prev_count.str() + ' -> ' + curr_count.str()
+	if prev_count > 1 {
+		msg := 'Possible neighbors: ' + prev_count.str() + ' -> ' + curr_count.str()
 		println(term.red('ALERT ' + msg))
 		log_event('ALERT ' + msg)
 		alert_sound()
@@ -198,7 +201,7 @@ fn check_jamming(prev_count int, curr_count int) {
 
 fn calculate_trust(curr CellState, prev CellState, nbr int) TrustReport {
 	mut score := 100
-	mut reasons := []string{}
+	mut reasons :=[]string{}
 	if nbr > 2 {
 		score -= 20
 		reasons << 'Neighbors: ' + nbr.str()
@@ -247,7 +250,7 @@ fn display_trust(report TrustReport) {
 }
 
 fn alert_sound() {
-	os.system('echo -ne "\\a" 2>/dev/null')
+	os.system('echo -ne "\a" 2>/dev/null')
 }
 
 fn has_input() bool {
@@ -265,13 +268,13 @@ fn log_event(msg string) {
 	f.close()
 }
 
-fn save_list(list []string) {
+fn save_list(list[]string) {
 	os.write_file(save_path, list.join('\n')) or {}
 }
 
 fn load_list() []string {
-	data := os.read_file(save_path) or { return [] }
-	mut result := []string{}
+	data := os.read_file(save_path) or { return[] }
+	mut result :=[]string{}
 	for line in data.split('\n') {
 		val := line.trim_space()
 		if val.len > 0 {
@@ -281,9 +284,9 @@ fn load_list() []string {
 	return result
 }
 
-fn load_blacklist() []string {
+fn load_blacklist()[]string {
 	data := os.read_file(blacklist_path) or { return [] }
-	mut result := []string{}
+	mut result :=[]string{}
 	for line in data.split('\n') {
 		val := line.trim_space()
 		if val.len > 0 {
@@ -293,7 +296,7 @@ fn load_blacklist() []string {
 	return result
 }
 
-fn save_blacklist(list []string) {
+fn save_blacklist(list[]string) {
 	os.write_file(blacklist_path, list.join('\n')) or {}
 }
 
@@ -316,7 +319,7 @@ fn is_new_cell(cid string) bool {
 }
 
 fn main() {
-	mut active_modems := []string{}
+	mut active_modems :=[]string{}
 	if os.exists('/dev/radio/atci1') {
 		active_modems << '/dev/radio/atci1'
 	}
@@ -330,7 +333,6 @@ fn main() {
 	}
 
 	band_default := get_default_band(active_modems[0])
-	println('Default band: ' + band_default)
 
 	os.signal_opt(.int, fn [active_modems, band_default] (_ os.Signal) {
 		println('\nRestoring...')
@@ -348,7 +350,7 @@ fn main() {
 		println('Saved: ' + whitelist.str())
 		print('Use saved? (y/n): ')
 		if os.input('') != 'y' {
-			whitelist = []
+			whitelist =[]
 		}
 	}
 	if whitelist.len == 0 {
@@ -366,9 +368,6 @@ fn main() {
 	save_list(whitelist)
 
 	mut blacklist := load_blacklist()
-	if blacklist.len > 0 {
-		println('Blacklist: ' + blacklist.str())
-	}
 
 	for m in active_modems {
 		send(m, 'AT+CEREG=2')
@@ -378,13 +377,14 @@ fn main() {
 	}
 
 	log_event('START ' + whitelist.str())
-	println('Commands: next list status trust neighbors scan history lte at >EARFCN +EARFCN -EARFCN ~CID ~ !CID !!CID')
+	println('Commands: pause next list status trust neighbors scan history lte at >EARFCN +EARFCN -EARFCN ~CID ~ !CID !!CID')
 
 	mut manual_target := ''
 	mut manual_cid := ''
 	mut prev_state := CellState{rat: -1, rssi: -1}
 	mut prev_nbr := -1
 	mut tick := 0
+	mut is_paused := false
 
 	for {
 		mut target := ''
@@ -409,13 +409,12 @@ fn main() {
 		log_event('LOCK ' + target)
 
 		delay := rand.int_in_range(900, 2700) or { 1200 }
-		println('Wait ' + (delay / 60).str() + 'm')
-		start := time.now()
+		mut start := time.now()
 		tick = 0
 		mut should_rotate := false
 
 		for {
-			if time.since(start).seconds() >= delay || should_rotate {
+			if (!is_paused && time.since(start).seconds() >= delay) || should_rotate {
 				break
 			}
 
@@ -431,7 +430,9 @@ fn main() {
 					prev_nbr = nbr
 
 					trust := calculate_trust(curr, prev_state, nbr)
-					display_trust(trust)
+					if trust.score < 70 {
+						display_trust(trust)
+					}
 					record_cell(curr, trust.score)
 
 					if trust.score < 50 {
@@ -469,11 +470,20 @@ fn main() {
 				cmd := os.get_raw_line().trim_space()
 				if cmd == 'next' {
 					break
+				} else if cmd == 'pause' {
+					is_paused = !is_paused
+					if is_paused {
+						println(term.yellow('Hopping paused.'))
+					} else {
+						println(term.green('Hopping resumed.'))
+						start = time.now()
+					}
 				} else if cmd == 'list' {
 					println('Whitelist: ' + whitelist.str())
 					println('Blacklist: ' + blacklist.str())
 				} else if cmd == 'status' {
 					s := get_cell_state(active_modems[0])
+					println('Paused: ' + is_paused.str())
 					println('LAC:' + s.lac + ' CID:' + s.cid + ' RAT:' + rat_name(s.rat) +
 						' PLMN:' + s.plmn + ' RSSI:' + s.rssi.str())
 				} else if cmd == 'trust' {
@@ -562,6 +572,6 @@ fn main() {
 		for m in active_modems {
 			send(m, 'AT+EMMCHLCK=0')
 		}
-		time.sleep(2 * time.second)
+		time.sleep(3 * time.second)
 	}
 }
