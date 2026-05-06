@@ -272,8 +272,8 @@ fn save_list(list[]string) {
 	os.write_file(save_path, list.join('\n')) or {}
 }
 
-fn load_list() []string {
-	data := os.read_file(save_path) or { return[] }
+fn load_list()[]string {
+	data := os.read_file(save_path) or { return [] }
 	mut result :=[]string{}
 	for line in data.split('\n') {
 		val := line.trim_space()
@@ -316,6 +316,23 @@ fn is_new_cell(cid string) bool {
 		}
 	}
 	return true
+}
+
+fn get_total_rx() i64 {
+	mut total := i64(0)
+	ifaces :=['ccmni0', 'ccmni1', 'ccmni2', 'rmnet0', 'rmnet1', 'rmnet_data0', 'rmnet_data1']
+	for iface in ifaces {
+		data := os.read_file('/sys/class/net/' + iface + '/statistics/rx_bytes') or { continue }
+		total += data.trim_space().i64()
+	}
+	return total
+}
+
+fn is_heavy_traffic() bool {
+	rx1 := get_total_rx()
+	time.sleep(1 * time.second)
+	rx2 := get_total_rx()
+	return (rx2 - rx1) > 512000
 }
 
 fn main() {
@@ -368,6 +385,7 @@ fn main() {
 	save_list(whitelist)
 
 	mut blacklist := load_blacklist()
+	mut target_scores := map[string]int{}
 
 	for m in active_modems {
 		send(m, 'AT+CEREG=2')
@@ -396,7 +414,24 @@ fn main() {
 			if whitelist.len == 0 {
 				whitelist << '0'
 			}
-			target = rand.element(whitelist) or { whitelist[0] }
+			mut best_targets :=[]string{}
+			if target_scores.len > 0 {
+				mut scores :=[]int{}
+				for _, s in target_scores {
+					scores << s
+				}
+				scores.sort(a > b)
+				threshold := if scores.len >= 3 { scores[2] } else { scores[scores.len - 1] }
+				for t, s in target_scores {
+					if s >= threshold && t in whitelist {
+						best_targets << t
+					}
+				}
+			}
+			if best_targets.len == 0 {
+				best_targets = whitelist.clone()
+			}
+			target = rand.element(best_targets) or { whitelist[0] }
 			println('\n>>> Auto: ' + term.green(target))
 		}
 
@@ -408,13 +443,18 @@ fn main() {
 		}
 		log_event('LOCK ' + target)
 
-		delay := rand.int_in_range(900, 2700) or { 1200 }
+		mut delay := rand.int_in_range(900, 2700) or { 1200 }
 		mut start := time.now()
 		tick = 0
 		mut should_rotate := false
 
 		for {
 			if (!is_paused && time.since(start).seconds() >= delay) || should_rotate {
+				if !should_rotate && is_heavy_traffic() {
+					println(term.yellow('Heavy traffic detected, delaying hop...'))
+					delay += 60
+					continue
+				}
 				break
 			}
 
@@ -430,6 +470,10 @@ fn main() {
 					prev_nbr = nbr
 
 					trust := calculate_trust(curr, prev_state, nbr)
+					if target != '' {
+						target_scores[target] = trust.score
+					}
+					
 					if trust.score < 70 {
 						display_trust(trust)
 					}
