@@ -439,6 +439,7 @@ fn main() {
 			send(m, 'AT+ERAT=6')
 			send(m, band_lock_mask)
 			time.sleep(500 * time.millisecond)
+			if manual_cid != '' { send(m, 'AT+EMMCHLCK=1,7,0,' + target + ',,3') } // to force set manual cid
 			send(m, 'AT+EMMCHLCK=1,7,0,' + target + ',' + manual_cid + ',3')
 		}
 		log_event('LOCK ' + target)
