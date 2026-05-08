@@ -414,24 +414,8 @@ fn main() {
 			if whitelist.len == 0 {
 				whitelist << '0'
 			}
-			mut best_targets :=[]string{}
-			if target_scores.len > 0 {
-				mut scores :=[]int{}
-				for _, s in target_scores {
-					scores << s
-				}
-				scores.sort(a > b)
-				threshold := if scores.len >= 3 { scores[2] } else { scores[scores.len - 1] }
-				for t, s in target_scores {
-					if s >= threshold && t in whitelist {
-						best_targets << t
-					}
-				}
-			}
-			if best_targets.len == 0 {
-				best_targets = whitelist.clone()
-			}
-			target = rand.element(best_targets) or { whitelist[0] }
+			
+			target = rand.element(whitelist) or { '0' }
 			println('\n>>> Auto: ' + term.green(target))
 		}
 
