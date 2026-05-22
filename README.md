@@ -1,11 +1,11 @@
-# MushroomTek
+# PhoneSnatchProof
 
 Network stealth utility for MediaTek chipsets. Sends low-level AT commands to the modem to block carrier-side location triangulation, lock onto specific cells, and silence radio telemetry.
 
 ---
 # Quick start (copy - paste - enter)
 ```sh
-pkg update -y && pkg install -y git clang make && if ! command -v v >/dev/null 2>&1; then git clone --depth=1 https://github.com/vlang/v && cd v && make && ./v symlink && cd ..; fi && git clone --depth=1 https://github.com/tailsmails/mushroomtek && cd mushroomtek && v -prod mushroomtek.v -o mushroomtek && ln -sf $(pwd)/mushroomtek $PREFIX/bin/mushroomtek && sudo mushroomtek
+pkg update -y && pkg install -y git clang make && if ! command -v v >/dev/null 2>&1; then git clone --depth=1 https://github.com/vlang/v && cd v && make && ./v symlink && cd ..; fi && git clone --depth=1 https://github.com/tailsmails/PhoneSnatchProof && cd PhoneSnatchProof && v -prod PhoneSnatchProof.v -o PhoneSnatchProof && ln -sf $(pwd)/PhoneSnatchProof $PREFIX/bin/PhoneSnatchProof && sudo PhoneSnatchProof
 ```
 
 ---
@@ -31,7 +31,7 @@ pkg install git clang make
 git clone https://github.com/vlang/v
 cd v && make && ./v symlink && cd ..
 
-v -prod mushroomtek.v -o mushroomtek
+v -prod PhoneSnatchProof.v -o PhoneSnatchProof
 ```
 
 ---
@@ -39,7 +39,7 @@ v -prod mushroomtek.v -o mushroomtek
 ## Run
 
 ```
-su -c ./mushroomtek
+su -c ./PhoneSnatchProof
 ```
 
 Enter target EARFCNs when prompted (e.g. `1850,1300`). Runtime commands:
