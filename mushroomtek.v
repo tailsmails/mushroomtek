@@ -337,16 +337,21 @@ fn is_heavy_traffic() bool {
 
 fn main() {
 	mut active_modems :=[]string{}
-	if os.exists('/dev/radio/atci1') {
-		active_modems << '/dev/radio/atci1'
+	if os.exists('/dev/radio/pttynwcmd') {
+		active_modems << '/dev/radio/pttynwcmd'
 	}
-	print('Protect SIM2? (y/n): ')
-	if os.exists('/dev/radio/atci2') && os.input('') == 'y' {
-		active_modems << '/dev/radio/atci2'
-	}
-	if active_modems.len == 0 {
-		println(term.red('No radio interfaces found.'))
-		exit(1)
+  else {
+		if os.exists('/dev/radio/atci1') {
+		  active_modems << '/dev/radio/atci1'
+	  }
+	  print('Protect atci2? (y/n): ')
+	  if os.exists('/dev/radio/atci2') && os.input('') == 'y' {
+		  active_modems << '/dev/radio/atci2'
+	  }
+	  if active_modems.len == 0 {
+		  println(term.red('No radio interfaces found.'))
+		  exit(1)
+	  }
 	}
 
 	band_default := get_default_band(active_modems[0])
