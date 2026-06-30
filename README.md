@@ -1,6 +1,10 @@
 # Mushroomtek
 
-Network stealth utility for MediaTek chipsets. Sends low-level AT commands to the modem to block carrier-side location triangulation, lock onto specific cells, and silence radio telemetry.
+An open-source, terminal-based **SnoopSnitch alternative** optimized for MediaTek chipsets. It operates as a network stealth utility, sending low-level AT commands directly to the modem to block carrier-side location triangulation, lock onto trusted cells, and suppress radio telemetry. 
+
+While SnoopSnitch is heavily tailored for Qualcomm-based diagnostics, **Mushroomtek** brings cellular defense and anomaly-checking features to MediaTek-based Android devices.
+
+> **Non-MediaTek Modems**: While designed and optimized primarily for MediaTek platforms, this utility *might* also work on non-MediaTek modems that expose an AT command interface (such as some Unisoc or Qualcomm devices). However, please **test on other hardware at your own risk**.
 
 ---
 # Quick start (copy - paste - enter)
@@ -20,11 +24,13 @@ pkg update -y && pkg install -y git clang make && if ! command -v v >/dev/null 2
 
 **Automated Rotation** -- Randomized cell lock cycling to mimic natural movement patterns and avoid automated network anomaly detection.
 
+**Online Verification (BeaconDB)** -- Integrates with BeaconDB (an open-source Mozilla Location Service replacement) to dynamically verify connected cell tower IDs against public databases to warn against potential IMSI-Catchers or fake base stations without requiring any API keys.
+
 ---
 
 ## Build
 
-```
+```bash
 pkg update
 pkg install git clang make
 
@@ -38,31 +44,37 @@ v -prod mushroomtek.v -o mushroomtek
 
 ## Run
 
-```
+```bash
 su -c ./mushroomtek
 ```
 
 Enter target EARFCNs when prompted (e.g. `1850,1300`). Runtime commands:
 
 - `next` -- skip current timer cycle
+- `status` -- gets the modem status
+- `trust` -- shows trust score of the current cell tower
+- `neighbors` -- shows neighbor cell towers
+- `scan` -- scans SIM card status
+- `history` -- shows history of verified towers
+- `lte` -- lock to LTE-only mode
+- `list` -- shows a list of your EARFCN whitelist
 - `>EARFCN` -- immediate manual cell override
 - `+` / `-` -- add or remove EARFCNs from whitelist
-- `status` -- gets the modem status
-- `at` -- send custom at command (DANGER ZONE PLEASE TAKE BACKUP FROM NVRAM AND NVDATA BEFORE DOING EVERYTHING)
-- `list` -- shows a list of your EARFCN white list
-- `~CID` -- sets a custom CID (number) to channel lock it (type ~ without CID number to allow your modem to connect any CID)
+- `!` / `!!` -- blacklist or unblacklist cell IDs
+- `~CID` -- sets a custom CID (number) to channel lock it (type `~` without CID number to allow your modem to connect to any CID)
+- `at` -- send custom AT command (**DANGER ZONE: PLEASE TAKE A BACKUP OF NVRAM AND NVDATA BEFORE DOING ANYTHING**)
 
 ---
 
 ## Emergency Restore
 
-`Ctrl+C` triggers automatic cleanup: restores default band masks, re-enables neighbor reports, unlocks cell/frequency, returns modem to standard mode.
+`Ctrl+C` triggers automatic cleanup: restores default band masks, re-enables neighbor reports, unlocks cell/frequency, and returns the modem to standard automatic mode.
 
 ---
 
 ## Disclaimer
 
-Educational and personal privacy research only.
+This tool is intended for educational, privacy research, and personal defensive purposes only. 
 
 ---
 
