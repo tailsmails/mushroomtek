@@ -28,6 +28,14 @@ pkg update -y && pkg install -y git clang make && if ! command -v v >/dev/null 2
 
 ---
 
+## Active Defense vs. Passive Monitoring
+
+Unlike traditional cellular monitors (like SnoopSnitch) which act as passive Intrusion Detection Systems (IDS) by analyzing traffic and alerting you *after* a potential anomaly or IMSI-catcher interaction has occurred, **Mushroomtek** takes an **active mitigation** approach. 
+
+It does not just watch; it continuously reconfigures the modem's state to actively block tracking vectors, suppress neighbor reporting, and prevent forced handovers before network-side triangulation can take place.
+
+---
+
 ## Build
 
 ```bash
