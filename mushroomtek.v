@@ -511,7 +511,10 @@ fn main() {
 		for m in active_modems {
 			send(m, 'AT+EMMCHLCK=0')
 			send(m, band_default)
-			send(m, 'AT+ERAT=0')
+			
+			send(m, 'AT+ERAT=6')
+			time.sleep(100 * time.millisecond) 
+			send(m, 'AT+ERAT=10')
 		}
 		log_event('EXIT')
 		exit(0)
@@ -597,7 +600,7 @@ fn main() {
 		}
 		
 		for m in active_modems {
-			send(m, 'AT+ERAT=6')
+			send(m, 'AT+ERAT=3')
 			send(m, band_lock_mask)
 		}
 		time.sleep(500 * time.millisecond)
