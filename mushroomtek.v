@@ -70,7 +70,7 @@ fn hex_to_dec(hex_str string) string {
 	return val.str()
 }
 
-fn verify_cell_tower(plmn string, lac string, cid string, socks_proxy string) bool {
+fn verify_cell_tower(plmn string, lac string, cid string, rat int, socks_proxy string) bool {
 	if plmn.len < 5 || lac.len == 0 || cid.len == 0 {
 		return true 
 	}
@@ -80,13 +80,24 @@ fn verify_cell_tower(plmn string, lac string, cid string, socks_proxy string) bo
 	lac_dec := hex_to_dec(lac)
 	cid_dec := hex_to_dec(cid)
 	
-	url := 'https://api.mylnikov.org/geolocation/cell?v=1.1&data=open&mcc=${mcc}&mnc=${mnc}&lac=${lac_dec}&cellid=${cid_dec}'
+	radio_type := match rat {
+		0, 1, 3 { 'gsm' }
+		2, 4, 5, 6 { 'wcdma' }
+		7 { 'lte' }
+		else { 'lte' }
+	}
 	
-	mut cmd := 'curl -s -m 12'
+	payload := '{"cellTowers": [{"radioType": "${radio_type}", "mobileCountryCode": ${mcc}, "mobileNetworkCode": ${mnc}, "locationAreaCode": ${lac_dec}, "cellId": ${cid_dec}}]}'
+	
+	mut cmd := 'curl -s -m 12 -X POST https://api.beacondb.net/v1/geolocate'
+	cmd += ' -H "Content-Type: application/json"'
+	cmd += ' -H "User-Agent: HopperCellTowerVerifier/1.0"'
+	
 	if socks_proxy.len > 0 {
 		cmd += ' --socks5-hostname ${socks_proxy}'
 	}
-	cmd += ' "${url}"'
+	
+	cmd += ' -d \'${payload}\''
 	
 	res := os.execute(cmd)
 	if res.exit_code != 0 {
@@ -99,12 +110,12 @@ fn verify_cell_tower(plmn string, lac string, cid string, socks_proxy string) bo
 		return true
 	}
 	
-	if !resp.contains('"result":') {
-		log_event('API CHECK: Received non-JSON response (possibly blocked/filtered). Skipping check to avoid false alarm.')
+	if !resp.contains('{') {
+		log_event('API CHECK: Received non-JSON response. Skipping check.')
 		return true
 	}
 	
-	if resp.contains('"result": 200') {
+	if resp.contains('"location":') {
 		return true
 	}
 	
@@ -634,7 +645,7 @@ fn main() {
 					
 					if api_check_enabled && curr.plmn.len >= 5 && (curr.plmn != oldplmn || curr.lac != oldlac || curr.cid != oldcid) {
 						println('Verifying tower ${curr.cid} (LAC: ${curr.lac}, PLMN: ${curr.plmn}) via Online DB...')
-						curr.api_verified = verify_cell_tower(curr.plmn, curr.lac, curr.cid, socks_proxy)
+						curr.api_verified = verify_cell_tower(curr.plmn, curr.lac, curr.cid, curr.rat, socks_proxy)
 						if !curr.api_verified {
 							msg := 'ALERT: Tower ${curr.cid} (LAC: ${curr.lac}) NOT FOUND in public databases!'
 							println(term.red('CRITICAL ALERT | ' + msg))
