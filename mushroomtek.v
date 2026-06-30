@@ -14,9 +14,11 @@
 import os
 import time
 import rand
+import rand.seed
 import term
 
 #include <poll.h>
+#include <unistd.h>
 
 struct C.pollfd {
 	fd      int
@@ -25,6 +27,7 @@ struct C.pollfd {
 }
 
 fn C.poll(fds &C.pollfd, nfds u32, timeout int) int
+fn C.read(fd int, buf voidptr, count usize) isize
 
 const band_lock_mask = 'AT+EPBSE=154,155,4,0,0,0,0,0,0,0'
 const save_path = '/data/local/tmp/hopper.list'
@@ -34,35 +37,156 @@ const history_path = '/data/local/tmp/hopper.history'
 
 struct CellState {
 mut:
-	lac  string
-	cid  string
-	rat  int
-	plmn string
-	rssi int
+	lac          string
+	cid          string
+	rat          int
+	plmn         string
+	rssi         int
+	api_verified bool = true
 }
 
 struct TrustReport {
 	score   int
-	reasons[]string
+	reasons []string
 }
 
-fn get_resp_path(path string) string {
-	return '/data/local/tmp/at_resp' + path.replace('/', '_')
+fn hex_to_dec(hex_str string) string {
+	clean := hex_str.replace('"', '').trim_space()
+	if clean.len == 0 { return '0' }
+	
+	mut val := i64(0)
+	for c in clean {
+		val = val << 4
+		if c >= `0` && c <= `9` {
+			val += c - `0`
+		} else if c >= `a` && c <= `f` {
+			val += 10 + (c - `a`)
+		} else if c >= `A` && c <= `F` {
+			val += 10 + (c - `A`)
+		} else {
+			return clean
+		}
+	}
+	return val.str()
+}
+
+fn verify_cell_tower(plmn string, lac string, cid string, socks_proxy string) bool {
+	if plmn.len < 5 || lac.len == 0 || cid.len == 0 {
+		return true 
+	}
+	mcc := plmn[0..3]
+	mnc := plmn[3..]
+	
+	lac_dec := hex_to_dec(lac)
+	cid_dec := hex_to_dec(cid)
+	
+	url := 'https://api.mylnikov.org/geolocation/cell?v=1.1&data=open&mcc=${mcc}&mnc=${mnc}&lac=${lac_dec}&cellid=${cid_dec}'
+	
+	mut cmd := 'curl -s -m 12'
+	if socks_proxy.len > 0 {
+		cmd += ' --socks5-hostname ${socks_proxy}'
+	}
+	cmd += ' "${url}"'
+	
+	res := os.execute(cmd)
+	if res.exit_code != 0 {
+		log_event('API CHECK: Network or curl error, skipping check to avoid false warning')
+		return true 
+	}
+	
+	resp := res.output.trim_space()
+	if resp.len == 0 {
+		return true
+	}
+	
+	if !resp.contains('"result":') {
+		log_event('API CHECK: Received non-JSON response (possibly blocked/filtered). Skipping check to avoid false alarm.')
+		return true
+	}
+	
+	if resp.contains('"result": 200') {
+		return true
+	}
+	
+	return false
+}
+
+fn query_device(path string, cmd string, timeout_ms int) string {
+	mut f := os.open_file(path, 'r+') or {
+		log_event('ERROR: Failed to open device ${path} for query')
+		return ''
+	}
+	defer { f.close() }
+
+	mut flush_pfd := C.pollfd{
+		fd: f.fd
+		events: 1 
+		revents: 0
+	}
+	for C.poll(&flush_pfd, 1, 0) > 0 {
+		mut junk := [256]u8{}
+		unsafe { C.read(f.fd, &junk[0], 256) }
+	}
+
+	f.write_string(cmd + '\r\n') or {
+		log_event('ERROR: Failed to write command to ${path}')
+		return ''
+	}
+
+	mut response := ''
+	mut pfd := C.pollfd{
+		fd: f.fd
+		events: 1 
+		revents: 0
+	}
+
+	start := time.now()
+	for {
+		elapsed := time.since(start).milliseconds()
+		remaining := timeout_ms - int(elapsed)
+		if remaining <= 0 {
+			break
+		}
+
+		ret := C.poll(&pfd, 1, remaining)
+		if ret < 0 {
+			break 
+		} else if ret == 0 {
+			break 
+		}
+
+		if (pfd.revents & 1) != 0 { 
+			mut buf := [1024]u8{}
+			n := unsafe { C.read(f.fd, &buf[0], 1024) }
+			if n > 0 {
+				response += unsafe { buf[0..n].bytestr() }
+				if response.contains('OK\r\n') || response.contains('ERROR\r\n') || response.contains('+CME ERROR:') {
+					break
+				}
+			} else {
+				break
+			}
+		} else if (pfd.revents & (8 | 16)) != 0 { 
+			break
+		}
+	}
+
+	return response.trim_space()
 }
 
 fn send(path string, cmd string) {
-	os.system('echo -e "${cmd}\r" > ${path}')
+	mut f := os.open_file(path, 'r+') or {
+		log_event('ERROR: Failed to open ${path} for send')
+		return
+	}
+	f.write_string(cmd + '\r\n') or {
+		log_event('ERROR: Failed to write ${cmd} to ${path}')
+	}
+	f.close()
 }
 
 fn query(path string, cmd string) string {
-	r_path := get_resp_path(path)
-	os.rm(r_path) or {}
-	os.system('timeout 4 cat ' + path + ' > ' + r_path + ' &')
-	time.sleep(300 * time.millisecond)
-	send(path, cmd)
-	time.sleep(2 * time.second)
-	result := os.read_file(r_path) or { return '' }
-	return result.trim_space()
+	return query_device(path, cmd, 2000)
 }
 
 fn get_default_band(path string) string {
@@ -78,20 +202,15 @@ fn get_default_band(path string) string {
 
 fn get_cell_state(path string) CellState {
 	mut state := CellState{rat: -1, rssi: -1}
-	r_path := get_resp_path(path)
-	os.rm(r_path) or {}
-	os.system('timeout 6 cat ' + path + ' > ' + r_path + ' &')
-	time.sleep(300 * time.millisecond)
-	send(path, 'AT+CEREG?')
-	time.sleep(400 * time.millisecond)
-	send(path, 'AT+CGREG?')
-	time.sleep(400 * time.millisecond)
-	send(path, 'AT+EOPS?')
-	time.sleep(400 * time.millisecond)
-	send(path, 'AT+CSQ')
-	time.sleep(1500 * time.millisecond)
-	resp := os.read_file(r_path) or { return state }
-	for line in resp.split_into_lines() {
+	
+	resp_cereg := query_device(path, 'AT+CEREG?', 1000)
+	resp_cgreg := query_device(path, 'AT+CGREG?', 1000)
+	resp_eops  := query_device(path, 'AT+EOPS?', 1000)
+	resp_csq   := query_device(path, 'AT+CSQ', 1000)
+
+	combined := '${resp_cereg}\n${resp_cgreg}\n${resp_eops}\n${resp_csq}'
+	
+	for line in combined.split_into_lines() {
 		l := line.trim_space()
 		if (l.starts_with('+CGREG:') || l.starts_with('+CEREG:')) && state.lac.len == 0 {
 			parts := l.all_after(':').split(',')
@@ -153,7 +272,7 @@ fn rat_name(rat int) string {
 	}
 }
 
-fn check_anomalies(prev CellState, curr CellState, modems[]string) {
+fn check_anomalies(prev CellState, curr CellState, modems []string) {
 	if prev.lac.len == 0 {
 		return
 	}
@@ -201,7 +320,12 @@ fn check_jamming(prev_count int, curr_count int) {
 
 fn calculate_trust(curr CellState, prev CellState, nbr int) TrustReport {
 	mut score := 100
-	mut reasons :=[]string{}
+	mut reasons := []string{}
+	
+	if !curr.api_verified {
+		score -= 50
+		reasons << 'Cell Tower not found in public databases (Fake Cell Risk)'
+	}
 	if nbr > 2 {
 		score -= 20
 		reasons << 'Neighbors: ' + nbr.str()
@@ -268,13 +392,15 @@ fn log_event(msg string) {
 	f.close()
 }
 
-fn save_list(list[]string) {
-	os.write_file(save_path, list.join('\n')) or {}
+fn save_list(list []string) {
+	os.write_file(save_path, list.join('\n')) or {
+		log_event('ERROR: Failed to save whitelist to ${save_path}')
+	}
 }
 
-fn load_list()[]string {
+fn load_list() []string {
 	data := os.read_file(save_path) or { return [] }
-	mut result :=[]string{}
+	mut result := []string{}
 	for line in data.split('\n') {
 		val := line.trim_space()
 		if val.len > 0 {
@@ -284,9 +410,9 @@ fn load_list()[]string {
 	return result
 }
 
-fn load_blacklist()[]string {
+fn load_blacklist() []string {
 	data := os.read_file(blacklist_path) or { return [] }
-	mut result :=[]string{}
+	mut result := []string{}
 	for line in data.split('\n') {
 		val := line.trim_space()
 		if val.len > 0 {
@@ -296,8 +422,10 @@ fn load_blacklist()[]string {
 	return result
 }
 
-fn save_blacklist(list[]string) {
-	os.write_file(blacklist_path, list.join('\n')) or {}
+fn save_blacklist(list []string) {
+	os.write_file(blacklist_path, list.join('\n')) or {
+		log_event('ERROR: Failed to save blacklist to ${blacklist_path}')
+	}
 }
 
 fn record_cell(curr CellState, trust int) {
@@ -320,7 +448,7 @@ fn is_new_cell(cid string) bool {
 
 fn get_total_rx() i64 {
 	mut total := i64(0)
-	ifaces :=['ccmni0', 'ccmni1', 'ccmni2', 'rmnet0', 'rmnet1', 'rmnet_data0', 'rmnet_data1']
+	ifaces := ['ccmni0', 'ccmni1', 'ccmni2', 'rmnet0', 'rmnet1', 'rmnet_data0', 'rmnet_data1']
 	for iface in ifaces {
 		data := os.read_file('/sys/class/net/' + iface + '/statistics/rx_bytes') or { continue }
 		total += data.trim_space().i64()
@@ -335,18 +463,31 @@ fn is_heavy_traffic() bool {
 	return (rx2 - rx1) > 512000
 }
 
+fn safe_input(prompt string) string {
+	res := os.input(prompt)
+	if res == '<EOF>' {
+		return ''
+	}
+	return res.trim_space()
+}
+
 fn main() {
-	mut active_modems :=[]string{}
+	rand.seed(seed.time_seed_array(2))
+
+	mut active_modems := []string{}
 	if os.exists('/dev/radio/pttynwcmd') {
 		active_modems << '/dev/radio/pttynwcmd'
-	}
-	else if os.exists('/dev/radio/atci1') {
+	} else if os.exists('/dev/radio/atci1') {
 		active_modems << '/dev/radio/atci1'
 	}
-	print('Protect atci2(sim2)? (y/n): ')
-	if os.exists('/dev/radio/atci2') && os.input('') == 'y' {
-		active_modems << '/dev/radio/atci2'
+	
+	if os.exists('/dev/radio/atci2') {
+		ans := safe_input('Protect atci2(sim2)? (y/n): ')
+		if ans == 'y' {
+			active_modems << '/dev/radio/atci2'
+		}
 	}
+	
 	if active_modems.len == 0 {
 		println(term.red('No radio interfaces found.'))
 		exit(1)
@@ -364,18 +505,38 @@ fn main() {
 		log_event('EXIT')
 		exit(0)
 	}) or {}
+	
+	mut api_check_enabled := false
+	mut socks_proxy := ''
+	
+	is_api_ans := safe_input('Enable Online Cell Database Verification? (y/n): ')
+	if is_api_ans == 'y' {
+		api_check_enabled = true
+		proxy_ans := safe_input('Enter SOCKS5 Proxy if required (e.g. 127.0.0.1:1080) [Press Enter to Skip]: ')
+		if proxy_ans.len > 0 {
+			socks_proxy = proxy_ans
+			println(term.yellow('Using SOCKS5 Proxy: ' + socks_proxy))
+		}
+	}
+	
+	mut manual_cid := ''
+	is_strict_ans := safe_input('Enable Strict Mode (Lock CID to 0)? (y/n): ')
+	if is_strict_ans == 'y' {
+		manual_cid = '0'
+		println(term.yellow('Strict mode enabled (CID locked to 0 by default)'))
+	}
 
 	mut whitelist := load_list()
 	if whitelist.len > 0 {
 		println('Saved: ' + whitelist.str())
-		print('Use saved? (y/n): ')
-		if os.input('') != 'y' {
-			whitelist =[]
+		ans := safe_input('Use saved? (y/n): ')
+		if ans != 'y' {
+			whitelist = []
 		}
 	}
 	if whitelist.len == 0 {
-		print('EARFCNs: ')
-		for rp in os.input('').split(',') {
+		earfcns_input := safe_input('EARFCNs: ')
+		for rp in earfcns_input.split(',') {
 			val := rp.trim_space()
 			if val.len > 0 {
 				whitelist << val
@@ -401,11 +562,13 @@ fn main() {
 	println('Commands: pause next list status trust neighbors scan history lte at >EARFCN +EARFCN -EARFCN ~CID ~ !CID !!CID')
 
 	mut manual_target := ''
-	mut manual_cid := ''
 	mut prev_state := CellState{rat: -1, rssi: -1}
 	mut prev_nbr := -1
 	mut tick := 0
 	mut is_paused := false
+	mut oldplmn := ''
+	mut oldlac := ''
+	mut oldcid := ''
 
 	for {
 		mut target := ''
@@ -421,17 +584,29 @@ fn main() {
 			target = rand.element(whitelist) or { '0' }
 			println('\n>>> Auto: ' + term.green(target))
 		}
-
+		
 		for m in active_modems {
 			send(m, 'AT+ERAT=6')
 			send(m, band_lock_mask)
-			time.sleep(500 * time.millisecond)
-			if manual_cid != '' { send(m, 'AT+EMMCHLCK=1,7,0,' + target + ',,3') } // to force set manual cid
+		}
+		time.sleep(500 * time.millisecond)
+
+		if manual_cid != '' {
+			for m in active_modems {
+				send(m, 'AT+EMMCHLCK=1,7,0,' + target + ',,3')
+			}
+			println('Searching cells (Step 1)...')
+			time.sleep(3000 * time.millisecond)
+		}
+
+		for m in active_modems {
 			send(m, 'AT+EMMCHLCK=1,7,0,' + target + ',' + manual_cid + ',3')
 		}
-		log_event('LOCK ' + target)
+		log_event('LOCK ' + target + ' (CID: ' + manual_cid + ')')
 
-		mut delay := rand.int_in_range(900, 2700) or { 1200 }
+		mut delay := rand.int_in_range(15, 75) or { 30 }
+		println('Hoping dynamic interval: ' + delay.str() + ' seconds')
+		
 		mut start := time.now()
 		tick = 0
 		mut should_rotate := false
@@ -440,22 +615,36 @@ fn main() {
 			if (!is_paused && time.since(start).seconds() >= delay) || should_rotate {
 				if !should_rotate && is_heavy_traffic() {
 					println(term.yellow('Heavy traffic detected, delaying hop...'))
-					delay += 60
+					delay += 30
 					continue
 				}
 				break
 			}
 
 			tick++
-			if tick >= 300 && !has_input() {
+			if tick >= 25 && !has_input() {
 				tick = 0
-				curr := get_cell_state(active_modems[0])
+				mut curr := get_cell_state(active_modems[0])
 				if curr.lac.len > 0 {
 					check_anomalies(prev_state, curr, active_modems)
 
 					nbr := get_neighbor_count(active_modems[0])
 					check_jamming(prev_nbr, nbr)
 					prev_nbr = nbr
+					
+					if api_check_enabled && curr.plmn.len >= 5 && (curr.plmn != oldplmn || curr.lac != oldlac || curr.cid != oldcid) {
+						println('Verifying tower ${curr.cid} (LAC: ${curr.lac}, PLMN: ${curr.plmn}) via Online DB...')
+						curr.api_verified = verify_cell_tower(curr.plmn, curr.lac, curr.cid, socks_proxy)
+						if !curr.api_verified {
+							msg := 'ALERT: Tower ${curr.cid} (LAC: ${curr.lac}) NOT FOUND in public databases!'
+							println(term.red('CRITICAL ALERT | ' + msg))
+							log_event('CRITICAL ' + msg)
+							alert_sound()
+						}
+						oldplmn = curr.plmn
+						oldlac = curr.lac
+						oldcid = curr.cid
+					}
 
 					trust := calculate_trust(curr, prev_state, nbr)
 					if target != '' {
@@ -587,6 +776,11 @@ fn main() {
 					val := cmd[1..].trim_space()
 					if val.len > 0 {
 						manual_cid = val
+						println('Setting manual CID to ' + val + ' (applying 2-step lock)...')
+						for m in active_modems {
+							send(m, 'AT+EMMCHLCK=1,7,0,' + target + ',,3')
+						}
+						time.sleep(3000 * time.millisecond)
 						for m in active_modems {
 							send(m, 'AT+EMMCHLCK=1,7,0,' + target + ',' + val + ',3')
 						}
