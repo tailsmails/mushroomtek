@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="im_a_tree.jpg" alt="I'm a tree" width="400" />
+</div>
+
 # Mushroomtek
 
 An open-source, terminal-based **SnoopSnitch alternative** optimized for MediaTek chipsets. It operates as a network stealth utility, sending low-level AT commands directly to the modem to block carrier-side location triangulation, lock onto trusted cells, and suppress radio telemetry. 
