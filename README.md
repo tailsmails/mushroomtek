@@ -91,4 +91,4 @@ This tool is intended for educational, privacy research, and personal defensive 
 ---
 
 ## License
-![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)
+![License: GPL v3](https://img.shields.io/badge/License-MIT-blue.svg)
