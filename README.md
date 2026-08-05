@@ -11,12 +11,6 @@ While SnoopSnitch is heavily tailored for Qualcomm-based diagnostics, **Mushroom
 > **Non-MediaTek Modems**: While designed and optimized primarily for MediaTek platforms, this utility *might* also work on non-MediaTek modems that expose an AT command interface (such as some Unisoc or Qualcomm devices). However, please **test on other hardware at your own risk**.
 
 ---
-# Quick start (copy - paste - enter)
-```sh
-pkg update -y && pkg install -y git clang make && if ! command -v v >/dev/null 2>&1; then git clone --depth=1 https://github.com/vlang/v && cd v && make && ./v symlink && cd ..; fi && git clone --depth=1 https://github.com/tailsmails/mushroomtek && cd mushroomtek && v -prod mushroomtek.v -o mushroomtek && ln -sf $(pwd)/mushroomtek $PREFIX/bin/mushroomtek && sudo mushroomtek
-```
-
----
 
 ## What It Does
 
