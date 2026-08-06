@@ -21,6 +21,7 @@ const save_path = './hopper.list'
 const log_path = './hopper.log'
 const blacklist_path = './hopper.blacklist'
 const history_path = './hopper.history'
+const backup_path = './hopper.backup'
 
 struct CellState {
 mut:
@@ -187,7 +188,25 @@ fn query(path string, cmd string) string {
 	return query_device(path, cmd, 2000)
 }
 
-fn get_default_band(path string) string {
+fn check_command_support(path string, cmd string) bool {
+	mut queries := []string{}
+	if cmd in ['CSQ', 'ECELL'] {
+		queries << 'AT+' + cmd
+	} else {
+		queries << 'AT+' + cmd + '?'
+		queries << 'AT+' + cmd + '=?'
+	}
+
+	for q in queries {
+		resp := query_device(path, q, 1000)
+		if resp.len > 0 && !resp.contains('ERROR') {
+			return true
+		}
+	}
+	return false
+}
+
+fn get_default_band(path string) ?string {
 	resp := query(path, 'AT+EPBSE?')
 	for line in resp.split_into_lines() {
 		l := line.trim_space()
@@ -195,10 +214,10 @@ fn get_default_band(path string) string {
 			return 'AT+EPBSE=' + l.all_after(':').trim_space()
 		}
 	}
-	return 'AT+EPBSE=154,155,168165599,928,0,0,0,0,0,0'
+	return none
 }
 
-fn get_default_rat(path string) string {
+fn get_default_rat(path string) ?string {
 	resp := query(path, 'AT+ERAT?')
 	for line in resp.split_into_lines() {
 		l := line.trim_space()
@@ -206,7 +225,7 @@ fn get_default_rat(path string) string {
 			return 'AT+ERAT=' + l.all_after(':').trim_space()
 		}
 	}
-	return 'AT+ERAT=10'
+	return none
 }
 
 fn get_cell_state(path string) CellState {
@@ -485,8 +504,59 @@ fn main() {
 		exit(1)
 	}
 
-	band_default := get_default_band(active_modems[0])
-	rat_default := get_default_rat(active_modems[0])
+	println('Checking required AT command support on modem...')
+	required_cmds := ['EMMCHLCK', 'EPBSE', 'ERAT', 'ECELL', 'CEREG', 'CGREG', 'CSQ', 'CFUN']
+	mut unsupported := []string{}
+	for req in required_cmds {
+		if !check_command_support(active_modems[0], req) {
+			unsupported << 'AT+' + req
+		}
+	}
+	if !check_command_support(active_modems[0], 'EOPS') && !check_command_support(active_modems[0], 'COPS') {
+		unsupported << 'AT+COPS/AT+EOPS'
+	}
+
+	if unsupported.len > 0 {
+		println(term.red('Error: The following required commands are not supported by this modem: ' + unsupported.join(', ')))
+		println(term.red('Error: Modem is not supported.'))
+		exit(1)
+	}
+	println(term.green('Modem verification successful. All required commands are supported.'))
+
+	mut band_default := ''
+	mut rat_default := ''
+
+	if os.exists(backup_path) {
+		backup_data := os.read_file(backup_path) or {
+			println(term.red('Error: Failed to read backup file ' + backup_path))
+			exit(1)
+		}
+		lines := backup_data.split_into_lines()
+		if lines.len < 2 {
+			println(term.red('Error: Backup file is corrupted or incomplete.'))
+			exit(1)
+		}
+		band_default = lines[0].trim_space()
+		rat_default = lines[1].trim_space()
+		println(term.green('Loaded default settings from backup file.'))
+	} else {
+		band_opt := get_default_band(active_modems[0]) or {
+			println(term.red('Error: Failed to read default band settings from modem.'))
+			exit(1)
+		}
+		rat_opt := get_default_rat(active_modems[0]) or {
+			println(term.red('Error: Failed to read default RAT settings from modem.'))
+			exit(1)
+		}
+		band_default = band_opt
+		rat_default = rat_opt
+
+		os.write_file(backup_path, '${band_default}\n${rat_default}') or {
+			println(term.red('Error: Failed to create backup file ' + backup_path))
+			exit(1)
+		}
+		println(term.green('Backup of default settings successfully saved.'))
+	}
 
 	os.signal_opt(.int, fn [active_modems, band_default, rat_default] (_ os.Signal) {
 		println('\nRestoring...')
@@ -722,8 +792,28 @@ fn main() {
 					}
 					println('Locked to LTE-only')
 				} else if cmd.starts_with('at ') || cmd.starts_with('AT ') {
-					for m in active_modems {
-						println(m + ': ' + query(m, cmd[3..].trim_space()))
+					raw_cmd := cmd[3..].trim_space()
+					mut base_cmd := raw_cmd.to_upper()
+					if base_cmd.starts_with('AT') {
+						base_cmd = base_cmd.all_after('AT')
+					}
+					is_extended := base_cmd.starts_with('+')
+					if is_extended {
+						base_cmd = base_cmd.all_after('+')
+					}
+					if base_cmd.contains('=') {
+						base_cmd = base_cmd.split('=')[0].trim_space()
+					}
+					if base_cmd.contains('?') {
+						base_cmd = base_cmd.split('?')[0].trim_space()
+					}
+					
+					if is_extended && !check_command_support(active_modems[0], base_cmd) {
+						println(term.red('Error: Command AT+' + base_cmd + ' is not supported by this modem!'))
+					} else {
+						for m in active_modems {
+							println(m + ': ' + query(m, raw_cmd))
+						}
 					}
 				} else if cmd.starts_with('>') {
 					val := cmd[1..].trim_space()
