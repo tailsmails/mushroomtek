@@ -17,10 +17,10 @@ fn C.poll(fds &C.pollfd, nfds u32, timeout int) int
 fn C.read(fd int, buf voidptr, count usize) isize
 
 const band_lock_mask = 'AT+EPBSE=154,155,4,0,0,0,0,0,0,0'
-const save_path = '/data/local/tmp/hopper.list'
-const log_path = '/data/local/tmp/hopper.log'
-const blacklist_path = '/data/local/tmp/hopper.blacklist'
-const history_path = '/data/local/tmp/hopper.history'
+const save_path = './hopper.list'
+const log_path = './hopper.log'
+const blacklist_path = './hopper.blacklist'
+const history_path = './hopper.history'
 
 struct CellState {
 mut:
@@ -489,6 +489,7 @@ fn main() {
 	rat_default := get_default_rat(active_modems[0])
 
 	os.signal_opt(.int, fn [active_modems, band_default, rat_default] (_ os.Signal) {
+		println('\nRestoring...')
 		for m in active_modems {
 			send(m, 'AT+EMMCHLCK=0')
 			send(m, band_default)
