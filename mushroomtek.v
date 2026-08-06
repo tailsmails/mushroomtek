@@ -41,15 +41,15 @@ fn hex_to_dec(hex_str string) string {
 	clean := hex_str.replace('"', '').trim_space()
 	if clean.len == 0 { return '0' }
 	
-	mut val := i64(0)
+	mut val := u64(0)
 	for c in clean {
 		val = val << 4
 		if c >= `0` && c <= `9` {
-			val += c - `0`
+			val += u64(c - `0`)
 		} else if c >= `a` && c <= `f` {
-			val += 10 + (c - `a`)
+			val += u64(10 + (c - `a`))
 		} else if c >= `A` && c <= `F` {
-			val += 10 + (c - `A`)
+			val += u64(10 + (c - `A`))
 		} else {
 			return clean
 		}
@@ -196,6 +196,17 @@ fn get_default_band(path string) string {
 		}
 	}
 	return 'AT+EPBSE=154,155,168165599,928,0,0,0,0,0,0'
+}
+
+fn get_default_rat(path string) string {
+	resp := query(path, 'AT+ERAT?')
+	for line in resp.split_into_lines() {
+		l := line.trim_space()
+		if l.starts_with('+ERAT:') {
+			return 'AT+ERAT=' + l.all_after(':').trim_space()
+		}
+	}
+	return 'AT+ERAT=10'
 }
 
 fn get_cell_state(path string) CellState {
@@ -444,23 +455,6 @@ fn is_new_cell(cid string) bool {
 	return true
 }
 
-fn get_total_rx() i64 {
-	mut total := i64(0)
-	ifaces := ['ccmni0', 'ccmni1', 'ccmni2', 'rmnet0', 'rmnet1', 'rmnet_data0', 'rmnet_data1']
-	for iface in ifaces {
-		data := os.read_file('/sys/class/net/' + iface + '/statistics/rx_bytes') or { continue }
-		total += data.trim_space().i64()
-	}
-	return total
-}
-
-fn is_heavy_traffic() bool {
-	rx1 := get_total_rx()
-	time.sleep(1 * time.second)
-	rx2 := get_total_rx()
-	return (rx2 - rx1) > 512000
-}
-
 fn safe_input(prompt string) string {
 	res := os.input(prompt)
 	if res == '<EOF>' {
@@ -492,16 +486,16 @@ fn main() {
 	}
 
 	band_default := get_default_band(active_modems[0])
+	rat_default := get_default_rat(active_modems[0])
 
-	os.signal_opt(.int, fn [active_modems, band_default] (_ os.Signal) {
-		println('\nRestoring...')
+	os.signal_opt(.int, fn [active_modems, band_default, rat_default] (_ os.Signal) {
 		for m in active_modems {
 			send(m, 'AT+EMMCHLCK=0')
 			send(m, band_default)
-			
-			send(m, 'AT+ERAT=6')
-			time.sleep(100 * time.millisecond) 
-			send(m, 'AT+ERAT=10')
+			send(m, rat_default)
+			send(m, 'AT+CFUN=0')
+			time.sleep(1500 * time.millisecond)
+			send(m, 'AT+CFUN=1')
 		}
 		log_event('EXIT')
 		exit(0)
@@ -605,23 +599,12 @@ fn main() {
 		}
 		log_event('LOCK ' + target + ' (CID: ' + manual_cid + ')')
 
-		mut delay := rand.int_in_range(15, 75) or { 30 }
+		delay := rand.int_in_range(15, 75) or { 30 }
 		println('Hoping dynamic interval: ' + delay.str() + ' seconds')
 		
-		mut start := time.now()
 		tick = 0
-		mut should_rotate := false
 
 		for {
-			if (!is_paused && time.since(start).seconds() >= delay) || should_rotate {
-				if !should_rotate && is_heavy_traffic() {
-					println(term.yellow('Heavy traffic detected, delaying hop...'))
-					delay += 30
-					continue
-				}
-				break
-			}
-
 			tick++
 			if tick >= 25 && !has_input() {
 				tick = 0
@@ -676,7 +659,6 @@ fn main() {
 						for m in active_modems {
 							send(m, 'AT+EMMCHLCK=0')
 						}
-						should_rotate = true
 					}
 
 					if curr.cid.len > 0 && is_new_cell(curr.cid) {
@@ -698,7 +680,6 @@ fn main() {
 						println(term.yellow('Hopping paused.'))
 					} else {
 						println(term.green('Hopping resumed.'))
-						start = time.now()
 					}
 				} else if cmd == 'list' {
 					println('Whitelist: ' + whitelist.str())
