@@ -85,4 +85,4 @@ This tool is intended for educational, privacy research, and personal defensive 
 ---
 
 ## License
-![License: GPL v3](https://img.shields.io/badge/License-EUPL1.2-gray.svg)
+![License](https://img.shields.io/badge/License-EUPL1.2-gray.svg)
