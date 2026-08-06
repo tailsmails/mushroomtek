@@ -1,0 +1,1 @@
+- [ ] ability to set a custom band for LTE
