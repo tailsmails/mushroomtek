@@ -23,6 +23,9 @@ const blacklist_path = './hopper.blacklist'
 const history_path = './hopper.history'
 const backup_path = './hopper.backup'
 
+const wlan_cfg_path = '/proc/net/wlan/cfg'
+const wlan_bak_path = './wlancfg'
+
 struct CellState {
 mut:
 	lac          string
@@ -36,6 +39,11 @@ mut:
 struct TrustReport {
 	score   int
 	reasons []string
+}
+
+struct WlanSetting {
+	key string
+	val string
 }
 
 fn hex_to_dec(hex_str string) string {
@@ -482,7 +490,149 @@ fn safe_input(prompt string) string {
 	return res.trim_space()
 }
 
-fn main() {
+fn normalize_wlan_val(raw string) string {
+	mut clean := raw.trim_space()
+	if clean.starts_with('0x') || clean.starts_with('0X') {
+		clean = clean[2..]
+		mut val := u64(0)
+		for c in clean {
+			val = val << 4
+			if c >= `0` && c <= `9` {
+				val += u64(c - `0`)
+			} else if c >= `a` && c <= `f` {
+				val += u64(10 + (c - `a`))
+			} else if c >= `A` && c <= `F` {
+				val += u64(10 + (c - `A`))
+			}
+		}
+		return val.str()
+	}
+	return clean
+}
+
+fn get_wlan_val(key string) ?string {
+	lines := os.read_lines(wlan_cfg_path) or { return none }
+	for line in lines {
+		if line.starts_with(key + '|') || line.starts_with('D:' + key + '|') {
+			parts := line.split('|')
+			if parts.len == 2 {
+				return normalize_wlan_val(parts[1])
+			}
+		}
+	}
+	return none
+}
+
+fn write_wlan_cfg(cmd string) bool {
+	mut f := os.open_file(wlan_cfg_path, 'w') or { return false }
+	f.write_string(cmd + '\n') or {
+		f.close()
+		return false
+	}
+	f.close()
+	return true
+}
+
+fn run_wlan(action string) {
+	if !os.exists(wlan_cfg_path) {
+		println(term.red('[!] Error: Target Wi-Fi interface not found. Operation aborted.'))
+		exit(1)
+	}
+
+	target_settings := [
+		WlanSetting{'CtiaMode', '1'},
+		WlanSetting{'Nss', '1'},
+		WlanSetting{'StaUapsd', '1'},
+		WlanSetting{'StaVHTBfee', '0'},
+		WlanSetting{'StaHEBfee', '0'},
+		WlanSetting{'TWTRequester', '0'},
+		WlanSetting{'P2pGoACSEnable', '0'}
+	]
+
+	mut supported := []WlanSetting{}
+	mut unsupported := []string{}
+
+	for setting in target_settings {
+		if _ := get_wlan_val(setting.key) {
+			supported << setting
+		} else {
+			unsupported << setting.key
+		}
+	}
+
+	if supported.len == 0 {
+		println(term.red('[!] Error: None of the target Wi-Fi parameters are supported by this device.'))
+		exit(1)
+	}
+
+	if action == 'apply' {
+		if unsupported.len > 0 {
+			println(term.yellow('[!] Warning: The following parameters are not supported and will be skipped: ' + unsupported.join(', ')))
+		}
+
+		if !os.exists(wlan_bak_path) {
+			println('[*] Generating configuration backup...')
+			mut f := os.create(wlan_bak_path) or {
+				println(term.red('[!] Error: Failed to create backup file at ' + wlan_bak_path))
+				exit(1)
+			}
+			for s in supported {
+				val := get_wlan_val(s.key) or { continue }
+				f.write_string('${s.key} ${val}\n') or {}
+			}
+			f.close()
+			println(term.green('[+] Backup successfully saved to ' + wlan_bak_path))
+		} else {
+			println(term.yellow('[*] Backup file already exists at ' + wlan_bak_path + '. Skipping overwrite.'))
+		}
+
+		println('[*] Applying Wi-Fi anti-tracking profile...')
+		mut success_count := 0
+		for s in supported {
+			if !write_wlan_cfg('${s.key} ${s.val}') {
+				println(term.red('[!] Error: Failed to apply ' + s.key))
+			} else {
+				success_count++
+			}
+		}
+		if success_count > 0 {
+			println(term.green('[+] GhostMe mode activated successfully :-]'))
+		}
+
+	} else if action == 'restore' {
+		if !os.exists(wlan_bak_path) {
+			println(term.red('[!] Error: Backup file missing. Cannot restore configuration.'))
+			exit(1)
+		}
+		println('[*] Restoring original configuration...')
+		lines := os.read_lines(wlan_bak_path) or {
+			println(term.red('[!] Error: Failed to read backup file.'))
+			exit(1)
+		}
+		for line in lines {
+			l := line.trim_space()
+			if l.len > 0 {
+				if !write_wlan_cfg(l) {
+					println(term.red('[!] Error: Failed to restore ' + l))
+				}
+			}
+		}
+		println(term.green('[+] Wi-Fi profile restored successfully.'))
+
+	} else if action == 'status' {
+		println('[*] Current Wi-Fi Parameters:')
+		for s in target_settings {
+			val := get_wlan_val(s.key) or { 'NOT SUPPORTED' }
+			println(s.key + ': ' + val)
+		}
+	} else {
+		println(term.red('[!] Unknown action: ' + action))
+		println('Usage: ' + os.args[0] + ' wlan {apply|restore|status}')
+		exit(1)
+	}
+}
+
+fn run_hopper() {
 	rand.seed(seed.time_seed_array(2))
 
 	mut active_modems := []string{}
@@ -873,4 +1023,17 @@ fn main() {
 		}
 		time.sleep(3 * time.second)
 	}
+}
+
+fn main() {
+	if os.args.len > 1 && os.args[1] == 'wlan' {
+		if os.args.len >= 3 {
+			run_wlan(os.args[2])
+		} else {
+			println(term.red('[!] Usage: ' + os.args[0] + ' wlan {apply|restore|status}'))
+			exit(1)
+		}
+		return
+	}
+	run_hopper()
 }
