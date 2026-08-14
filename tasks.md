@@ -2,4 +2,4 @@
 - [ ] NR support (force SA and additional AT cmds to band-lock)
 - [ ] Support GSM and WCDMA and so on (call without VoLTE)
 - [ ] Bluetooth :-]
-- [ ] Set custom TA (very hard but not impossible)
+- [x] Set custom TA (very hard but not impossible)
