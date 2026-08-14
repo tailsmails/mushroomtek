@@ -1,1 +1,3 @@
-- [ ] ability to set a custom band for LTE
+- [ ] Ability to set a custom band for LTE
+- [ ] NR support (force SA and additional AT cmds to band-lock)
+- [ ] Support GSM and WCDMA and so on (call without VoLTE)
