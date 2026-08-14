@@ -48,8 +48,9 @@ struct WlanSetting {
 
 fn hex_to_dec(hex_str string) string {
 	clean := hex_str.replace('"', '').trim_space()
-	if clean.len == 0 { return '0' }
-	
+	if clean.len == 0 {
+		return '0'
+	}
 	mut val := u64(0)
 	for c in clean {
 		val = val << 4
@@ -68,53 +69,53 @@ fn hex_to_dec(hex_str string) string {
 
 fn verify_cell_tower(plmn string, lac string, cid string, rat int, socks_proxy string) bool {
 	if plmn.len < 5 || lac.len == 0 || cid.len == 0 {
-		return true 
+		return true
 	}
 	mcc := plmn[0..3]
 	mnc := plmn[3..]
-	
+
 	lac_dec := hex_to_dec(lac)
 	cid_dec := hex_to_dec(cid)
-	
+
 	radio_type := match rat {
 		0, 1, 3 { 'gsm' }
 		2, 4, 5, 6 { 'wcdma' }
 		7 { 'lte' }
 		else { 'lte' }
 	}
-	
+
 	payload := '{"cellTowers": [{"radioType": "${radio_type}", "mobileCountryCode": ${mcc}, "mobileNetworkCode": ${mnc}, "locationAreaCode": ${lac_dec}, "cellId": ${cid_dec}}]}'
-	
+
 	mut cmd := 'curl -s -m 12 -X POST https://api.beacondb.net/v1/geolocate'
 	cmd += ' -H "Content-Type: application/json"'
 	cmd += ' -H "User-Agent: HopperCellTowerVerifier/1.0"'
-	
+
 	if socks_proxy.len > 0 {
 		cmd += ' --socks5-hostname ${socks_proxy}'
 	}
-	
+
 	cmd += ' -d \'${payload}\''
-	
+
 	res := os.execute(cmd)
 	if res.exit_code != 0 {
 		log_event('API CHECK: Network or curl error, skipping check to avoid false warning')
-		return true 
+		return true
 	}
-	
+
 	resp := res.output.trim_space()
 	if resp.len == 0 {
 		return true
 	}
-	
+
 	if !resp.contains('{') {
 		log_event('API CHECK: Received non-JSON response. Skipping check.')
 		return true
 	}
-	
+
 	if resp.contains('"location":') {
 		return true
 	}
-	
+
 	return false
 }
 
@@ -123,11 +124,13 @@ fn query_device(path string, cmd string, timeout_ms int) string {
 		log_event('ERROR: Failed to open device ${path} for query')
 		return ''
 	}
-	defer { f.close() }
+	defer {
+		f.close()
+	}
 
 	mut flush_pfd := C.pollfd{
 		fd: f.fd
-		events: 1 
+		events: 1
 		revents: 0
 	}
 	for C.poll(&flush_pfd, 1, 0) > 0 {
@@ -143,7 +146,7 @@ fn query_device(path string, cmd string, timeout_ms int) string {
 	mut response := ''
 	mut pfd := C.pollfd{
 		fd: f.fd
-		events: 1 
+		events: 1
 		revents: 0
 	}
 
@@ -156,13 +159,11 @@ fn query_device(path string, cmd string, timeout_ms int) string {
 		}
 
 		ret := C.poll(&pfd, 1, remaining)
-		if ret < 0 {
-			break 
-		} else if ret == 0 {
-			break 
+		if ret <= 0 {
+			break
 		}
 
-		if (pfd.revents & 1) != 0 { 
+		if (pfd.revents & 1) != 0 {
 			mut buf := [1024]u8{}
 			n := unsafe { C.read(f.fd, &buf[0], 1024) }
 			if n > 0 {
@@ -173,7 +174,7 @@ fn query_device(path string, cmd string, timeout_ms int) string {
 			} else {
 				break
 			}
-		} else if (pfd.revents & (8 | 16)) != 0 { 
+		} else if (pfd.revents & (8 | 16)) != 0 {
 			break
 		}
 	}
@@ -238,14 +239,14 @@ fn get_default_rat(path string) ?string {
 
 fn get_cell_state(path string) CellState {
 	mut state := CellState{rat: -1, rssi: -1}
-	
+
 	resp_cereg := query_device(path, 'AT+CEREG?', 1000)
 	resp_cgreg := query_device(path, 'AT+CGREG?', 1000)
-	resp_eops  := query_device(path, 'AT+EOPS?', 1000)
-	resp_csq   := query_device(path, 'AT+CSQ', 1000)
+	resp_eops := query_device(path, 'AT+EOPS?', 1000)
+	resp_csq := query_device(path, 'AT+CSQ', 1000)
 
 	combined := '${resp_cereg}\n${resp_cgreg}\n${resp_eops}\n${resp_csq}'
-	
+
 	for line in combined.split_into_lines() {
 		l := line.trim_space()
 		if (l.starts_with('+CGREG:') || l.starts_with('+CEREG:')) && state.lac.len == 0 {
@@ -357,7 +358,7 @@ fn check_jamming(prev_count int, curr_count int) {
 fn calculate_trust(curr CellState, prev CellState, nbr int) TrustReport {
 	mut score := 100
 	mut reasons := []string{}
-	
+
 	if !curr.api_verified {
 		score -= 50
 		reasons << 'Cell Tower not found in public databases (Fake Cell Risk)'
@@ -388,7 +389,10 @@ fn calculate_trust(curr CellState, prev CellState, nbr int) TrustReport {
 	if score < 0 {
 		score = 0
 	}
-	return TrustReport{score: score, reasons: reasons}
+	return TrustReport{
+		score: score
+		reasons: reasons
+	}
 }
 
 fn display_trust(report TrustReport) {
@@ -401,7 +405,7 @@ fn display_trust(report TrustReport) {
 	}
 	println(label)
 	for r in report.reasons {
-		println('  - ' + r)
+		println(' - ' + r)
 	}
 	if report.score < 30 {
 		log_event('LOW_TRUST ' + report.score.str())
@@ -466,8 +470,7 @@ fn save_blacklist(list []string) {
 
 fn record_cell(curr CellState, trust int) {
 	mut f := os.open_append(history_path) or { return }
-	f.write_string(time.now().format_ss() + '|' + curr.lac + '|' + curr.cid + '|' +
-		curr.rat.str() + '|' + curr.plmn + '|' + curr.rssi.str() + '|' + trust.str() + '\n') or {}
+	f.write_string(time.now().format_ss() + '|' + curr.lac + '|' + curr.cid + '|' + curr.rat.str() + '|' + curr.plmn + '|' + curr.rssi.str() + '|' + trust.str() + '\n') or {}
 	f.close()
 }
 
@@ -484,7 +487,7 @@ fn is_new_cell(cid string) bool {
 
 fn safe_input(prompt string) string {
 	res := os.input(prompt)
-	if res == '<EOF>' {
+	if res == '' {
 		return ''
 	}
 	return res.trim_space()
@@ -546,7 +549,7 @@ fn run_wlan(action string) {
 		WlanSetting{'StaVHTBfee', '0'},
 		WlanSetting{'StaHEBfee', '0'},
 		WlanSetting{'TWTRequester', '0'},
-		WlanSetting{'P2pGoACSEnable', '0'}
+		WlanSetting{'P2pGoACSEnable', '0'},
 	]
 
 	mut supported := []WlanSetting{}
@@ -598,7 +601,6 @@ fn run_wlan(action string) {
 		if success_count > 0 {
 			println(term.green('[+] GhostMe mode activated successfully :-]'))
 		}
-
 	} else if action == 'restore' {
 		if !os.exists(wlan_bak_path) {
 			println(term.red('[!] Error: Backup file missing. Cannot restore configuration.'))
@@ -618,7 +620,6 @@ fn run_wlan(action string) {
 			}
 		}
 		println(term.green('[+] Wi-Fi profile restored successfully.'))
-
 	} else if action == 'status' {
 		println('[*] Current Wi-Fi Parameters:')
 		for s in target_settings {
@@ -641,14 +642,14 @@ fn run_hopper() {
 	} else if os.exists('/dev/radio/atci1') {
 		active_modems << '/dev/radio/atci1'
 	}
-	
+
 	if os.exists('/dev/radio/atci2') {
 		ans := safe_input('Protect atci2(sim2)? (y/n): ')
 		if ans == 'y' {
 			active_modems << '/dev/radio/atci2'
 		}
 	}
-	
+
 	if active_modems.len == 0 {
 		println(term.red('No radio interfaces found.'))
 		exit(1)
@@ -721,10 +722,32 @@ fn run_hopper() {
 		log_event('EXIT')
 		exit(0)
 	}) or {}
-	
+
+	for m in active_modems {
+		send(m, 'AT+CEREG=2')
+		time.sleep(200 * time.millisecond)
+		send(m, 'AT+CGREG=3')
+		time.sleep(200 * time.millisecond)
+	}
+	println('\n' + term.bold('=== Initial Cell Status & Neighbors ==='))
+	init_state := get_cell_state(active_modems[0])
+	println('Status -> LAC: ' + init_state.lac + ' | CID: ' + init_state.cid +
+		' | RAT: ' + rat_name(init_state.rat) + ' | PLMN: ' + init_state.plmn +
+		' | RSSI: ' + init_state.rssi.str())
+
+	println('\nNeighbors (AT+ECELL):')
+	init_nbr_resp := query(active_modems[0], 'AT+ECELL')
+	if init_nbr_resp.len > 0 {
+		println(init_nbr_resp)
+	} else {
+		println('No neighbor response received.')
+	}
+	println('Count: ' + count_cells(init_nbr_resp).str())
+	println(term.bold('=======================================\n'))
+
 	mut api_check_enabled := false
 	mut socks_proxy := ''
-	
+
 	is_api_ans := safe_input('Enable Online Cell Database Verification? (y/n): ')
 	if is_api_ans == 'y' {
 		api_check_enabled = true
@@ -734,7 +757,7 @@ fn run_hopper() {
 			println(term.yellow('Using SOCKS5 Proxy: ' + socks_proxy))
 		}
 	}
-	
+
 	mut manual_cid := ''
 	is_strict_ans := safe_input('Enable Strict Mode (Lock CID to 0)? (y/n): ')
 	if is_strict_ans == 'y' {
@@ -767,13 +790,6 @@ fn run_hopper() {
 	mut blacklist := load_blacklist()
 	mut target_scores := map[string]int{}
 
-	for m in active_modems {
-		send(m, 'AT+CEREG=2')
-		time.sleep(200 * time.millisecond)
-		send(m, 'AT+CGREG=3')
-		time.sleep(200 * time.millisecond)
-	}
-
 	log_event('START ' + whitelist.str())
 	println('Commands: pause next list status trust neighbors scan history lte at >EARFCN +EARFCN -EARFCN ~CID ~ !CID !!CID')
 
@@ -796,11 +812,11 @@ fn run_hopper() {
 			if whitelist.len == 0 {
 				whitelist << '0'
 			}
-			
+
 			target = rand.element(whitelist) or { '0' }
 			println('\n>>> Auto: ' + term.green(target))
 		}
-		
+
 		for m in active_modems {
 			send(m, 'AT+ERAT=3')
 			send(m, band_lock_mask)
@@ -822,7 +838,7 @@ fn run_hopper() {
 
 		delay := rand.int_in_range(15, 75) or { 30 }
 		println('Hoping dynamic interval: ' + delay.str() + ' seconds')
-		
+
 		tick = 0
 
 		for {
@@ -836,7 +852,7 @@ fn run_hopper() {
 					nbr := get_neighbor_count(active_modems[0])
 					check_jamming(prev_nbr, nbr)
 					prev_nbr = nbr
-					
+
 					if api_check_enabled && curr.plmn.len >= 5 && (curr.plmn != oldplmn || curr.lac != oldlac || curr.cid != oldcid) {
 						println('Verifying tower ${curr.cid} (LAC: ${curr.lac}, PLMN: ${curr.plmn}) via Online DB...')
 						curr.api_verified = verify_cell_tower(curr.plmn, curr.lac, curr.cid, curr.rat, socks_proxy)
@@ -855,7 +871,7 @@ fn run_hopper() {
 					if target != '' {
 						target_scores[target] = trust.score
 					}
-					
+
 					if trust.score < 70 {
 						display_trust(trust)
 					}
@@ -957,7 +973,7 @@ fn run_hopper() {
 					if base_cmd.contains('?') {
 						base_cmd = base_cmd.split('?')[0].trim_space()
 					}
-					
+
 					if is_extended && !check_command_support(active_modems[0], base_cmd) {
 						println(term.red('Error: Command AT+' + base_cmd + ' is not supported by this modem!'))
 					} else {
