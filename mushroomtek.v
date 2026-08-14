@@ -89,17 +89,17 @@ fn apply_random_ta_spoof(path string) {
 fn restore_system_state(active_modems []string, band_default string, rat_default string) {
 	println(term.bold('\n[!] Initiating system teardown. Restoring all parameters to Day One state...'))
 	
-	if os.exists(wlan_bak_path) {
-		println('[*] Restoring Wi-Fi anti-tracking configuration...')
-		lines := os.read_lines(wlan_bak_path) or { []string{} }
-		for line in lines {
-			l := line.trim_space()
-			if l.len > 0 {
-				write_wlan_cfg(l)
-			}
-		}
-		println(term.green('[+] Wi-Fi settings successfully restored.'))
-	}
+	// if os.exists(wlan_bak_path) {
+	//	println('[*] Restoring Wi-Fi anti-tracking configuration...')
+	//	lines := os.read_lines(wlan_bak_path) or { []string{} }
+	//	for line in lines {
+	//		l := line.trim_space()
+	//		if l.len > 0 {
+	//			write_wlan_cfg(l)
+    //		}
+	//	}
+	//	println(term.green('[+] Wi-Fi settings successfully restored.'))
+	//}
 
 	println('[*] Releasing cell locks and restoring default carrier configurations...')
 	for m in active_modems {
