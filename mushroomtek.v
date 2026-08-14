@@ -1,8 +1,11 @@
+module main
+
 import os
 import time
 import rand
 import rand.seed
 import term
+import strconv
 
 #include <poll.h>
 #include <unistd.h>
@@ -46,38 +49,80 @@ struct WlanSetting {
 	val string
 }
 
+struct AsyncVerifyArgs {
+	plmn        string
+	lac         string
+	cid         string
+	rat         int
+	socks_proxy string
+}
+
 fn hex_to_dec(hex_str string) string {
-	clean := hex_str.replace('"', '').trim_space()
+	clean := hex_str.replace('"', '').trim_space().replace('0x', '').replace('0X', '')
 	if clean.len == 0 {
 		return '0'
 	}
-	mut val := u64(0)
-	for c in clean {
-		val = val << 4
-		if c >= `0` && c <= `9` {
-			val += u64(c - `0`)
-		} else if c >= `a` && c <= `f` {
-			val += u64(10 + (c - `a`))
-		} else if c >= `A` && c <= `F` {
-			val += u64(10 + (c - `A`))
-		} else {
-			return clean
-		}
-	}
+	val := strconv.parse_uint(clean, 16, 64) or { 0 }
 	return val.str()
 }
 
-fn verify_cell_tower(plmn string, lac string, cid string, rat int, socks_proxy string) bool {
-	if plmn.len < 5 || lac.len == 0 || cid.len == 0 {
-		return true
+fn get_secure_seed() []u32 {
+	mut seed_bytes := []u8{len: 8}
+	mut f := os.open('/dev/urandom') or {
+		return seed.time_seed_array(2)
 	}
-	mcc := plmn[0..3]
-	mnc := plmn[3..]
+	f.read(mut seed_bytes) or {}
+	f.close()
+	
+	mut seed_array := []u32{len: 2}
+	seed_array[0] = (u32(seed_bytes[0]) << 24) | (u32(seed_bytes[1]) << 16) | (u32(seed_bytes[2]) << 8) | u32(seed_bytes[3])
+	seed_array[1] = (u32(seed_bytes[4]) << 24) | (u32(seed_bytes[5]) << 16) | (u32(seed_bytes[6]) << 8) | u32(seed_bytes[7])
+	return seed_array
+}
 
-	lac_dec := hex_to_dec(lac)
-	cid_dec := hex_to_dec(cid)
+fn apply_random_ta_spoof(path string) {
+	rand_ta_offset := rand.int_in_range(5, 60) or { 10 }
+	log_event('TA_SPOOF: Injecting volatile timing offset of ${rand_ta_offset}us')
+	send(path, 'AT+ERFTX=0,${rand_ta_offset}') // check com/mediatek/engineermode/modemtest/ModemTestActivity to get more details :-}
+}
 
-	radio_type := match rat {
+fn restore_system_state(active_modems []string, band_default string, rat_default string) {
+	println(term.bold('\n[!] Initiating system teardown. Restoring all parameters to Day One state...'))
+	
+	if os.exists(wlan_bak_path) {
+		println('[*] Restoring Wi-Fi anti-tracking configuration...')
+		lines := os.read_lines(wlan_bak_path) or { []string{} }
+		for line in lines {
+			l := line.trim_space()
+			if l.len > 0 {
+				write_wlan_cfg(l)
+			}
+		}
+		println(term.green('[+] Wi-Fi settings successfully restored.'))
+	}
+
+	println('[*] Releasing cell locks and restoring default carrier configurations...')
+	for m in active_modems {
+		send(m, 'AT+EMMCHLCK=0')
+		send(m, band_default)
+		send(m, rat_default)
+	}
+	
+	println(term.green('[+] Modem released from locked state. Cellular connection naturally re-establishing.'))
+	log_event('EXIT_AND_RESTORED_SUCCESSFULLY')
+}
+
+fn async_verify_cell_tower(args AsyncVerifyArgs) {
+	if args.plmn.len < 5 || args.lac.len == 0 || args.cid.len == 0 {
+		return
+	}
+	mcc := args.plmn[0..3]
+	mnc := args.plmn[3..]
+
+	lac_dec := hex_to_dec(args.lac)
+	cid_dec := hex_to_dec(args.cid)
+
+	radio_type := match args.rat {
 		0, 1, 3 { 'gsm' }
 		2, 4, 5, 6 { 'wcdma' }
 		7 { 'lte' }
@@ -86,37 +131,35 @@ fn verify_cell_tower(plmn string, lac string, cid string, rat int, socks_proxy s
 
 	payload := '{"cellTowers": [{"radioType": "${radio_type}", "mobileCountryCode": ${mcc}, "mobileNetworkCode": ${mnc}, "locationAreaCode": ${lac_dec}, "cellId": ${cid_dec}}]}'
 
-	mut cmd := 'curl -s -m 12 -X POST https://api.beacondb.net/v1/geolocate'
+	mut cmd := 'curl -s -m 8 -X POST https://api.beacondb.net/v1/geolocate'
 	cmd += ' -H "Content-Type: application/json"'
 	cmd += ' -H "User-Agent: HopperCellTowerVerifier/1.0"'
 
-	if socks_proxy.len > 0 {
-		cmd += ' --socks5-hostname ${socks_proxy}'
+	if args.socks_proxy.len > 0 {
+		cmd += ' --socks5-hostname ${args.socks_proxy}'
 	}
 
-	cmd += ' -d \'${payload}\''
+	cmd += " -d '${payload}'"
 
 	res := os.execute(cmd)
 	if res.exit_code != 0 {
-		log_event('API CHECK: Network or curl error, skipping check to avoid false warning')
-		return true
+		log_event('API CHECK ASYNC: Connection error or proxy timeout.')
+		return
 	}
 
 	resp := res.output.trim_space()
-	if resp.len == 0 {
-		return true
+	if resp.len == 0 || !resp.contains('{') {
+		return
 	}
 
-	if !resp.contains('{') {
-		log_event('API CHECK: Received non-JSON response. Skipping check.')
-		return true
+	if !resp.contains('"location":') {
+		msg := 'ALERT: Tower ${args.cid} (LAC: ${args.lac}) NOT FOUND in public databases! Fake Cell Risk!'
+		println('\n' + term.red('CRITICAL ALERT | ' + msg))
+		log_event('CRITICAL ' + msg)
+		alert_sound()
+	} else {
+		log_event('API CHECK ASYNC: Tower ${args.cid} verified successfully.')
 	}
-
-	if resp.contains('"location":') {
-		return true
-	}
-
-	return false
 }
 
 fn query_device(path string, cmd string, timeout_ms int) string {
@@ -634,7 +677,7 @@ fn run_wlan(action string) {
 }
 
 fn run_hopper() {
-	rand.seed(seed.time_seed_array(2))
+	rand.seed(get_secure_seed())
 
 	mut active_modems := []string{}
 	if os.exists('/dev/radio/pttynwcmd') {
@@ -710,16 +753,7 @@ fn run_hopper() {
 	}
 
 	os.signal_opt(.int, fn [active_modems, band_default, rat_default] (_ os.Signal) {
-		println('\nRestoring...')
-		for m in active_modems {
-			send(m, 'AT+EMMCHLCK=0')
-			send(m, band_default)
-			send(m, rat_default)
-			send(m, 'AT+CFUN=0')
-			time.sleep(1500 * time.millisecond)
-			send(m, 'AT+CFUN=1')
-		}
-		log_event('EXIT')
+		restore_system_state(active_modems, band_default, rat_default)
 		exit(0)
 	}) or {}
 
@@ -763,6 +797,13 @@ fn run_hopper() {
 	if is_strict_ans == 'y' {
 		manual_cid = '0'
 		println(term.yellow('Strict mode enabled (CID locked to 0 by default)'))
+	}
+
+	mut ta_spoof_enabled := false
+	is_ta_ans := safe_input('Enable Random Tx (Timing Advance) Spoofing? (y/n): ')
+	if is_ta_ans == 'y' {
+		ta_spoof_enabled = true
+		println(term.yellow('Random Timing Advance Spoofing enabled.'))
 	}
 
 	mut whitelist := load_list()
@@ -820,6 +861,9 @@ fn run_hopper() {
 		for m in active_modems {
 			send(m, 'AT+ERAT=3')
 			send(m, band_lock_mask)
+			if ta_spoof_enabled {
+				apply_random_ta_spoof(m)
+			}
 		}
 		time.sleep(500 * time.millisecond)
 
@@ -854,14 +898,18 @@ fn run_hopper() {
 					prev_nbr = nbr
 
 					if api_check_enabled && curr.plmn.len >= 5 && (curr.plmn != oldplmn || curr.lac != oldlac || curr.cid != oldcid) {
-						println('Verifying tower ${curr.cid} (LAC: ${curr.lac}, PLMN: ${curr.plmn}) via Online DB...')
-						curr.api_verified = verify_cell_tower(curr.plmn, curr.lac, curr.cid, curr.rat, socks_proxy)
-						if !curr.api_verified {
-							msg := 'ALERT: Tower ${curr.cid} (LAC: ${curr.lac}) NOT FOUND in public databases!'
-							println(term.red('CRITICAL ALERT | ' + msg))
-							log_event('CRITICAL ' + msg)
-							alert_sound()
+						println('Verifying tower ${curr.cid} (LAC: ${curr.lac}, PLMN: ${curr.plmn}) via Online DB in background...')
+						
+						verify_args := AsyncVerifyArgs{
+							plmn: curr.plmn
+							lac: curr.lac
+							cid: curr.cid
+							rat: curr.rat
+							socks_proxy: socks_proxy
 						}
+						
+						go async_verify_cell_tower(verify_args)
+						
 						oldplmn = curr.plmn
 						oldlac = curr.lac
 						oldcid = curr.cid
