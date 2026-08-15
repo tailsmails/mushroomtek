@@ -2,7 +2,7 @@
   <img src="im_a_tree.jpg" alt="I'm a tree" width="400" />
 </div>
 
-# Mushroomtek
+# Mushroomtek or <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e5/LSD-from-xtal-and-Spartan-PM3-3D-balls-web.png/1280px-LSD-from-xtal-and-Spartan-PM3-3D-balls-web.png" alt="molecule" style="height: 1.1em; vertical-align: middle; display: inline-block; margin: 0 4px;" />tek
 
 An open source, terminal based SnoopSnitch alternative for MediaTek chipsets. It operates as a network stealth utility, sending low level AT commands directly to the modem to block carrier side location triangulation, lock onto trusted cells, and suppress radio telemetry.
 
