@@ -882,9 +882,13 @@ fn run_hopper() {
 		delay := rand.int_in_range(15, 75) or { 30 }
 		println('Hoping dynamic interval: ' + delay.str() + ' seconds')
 
+		mut sw := time.new_stopwatch()
 		tick = 0
 
 		for {
+			if !is_paused && sw.elapsed().seconds() >= f64(delay) {
+				break
+			}
 			tick++
 			if tick >= 25 && !has_input() {
 				tick = 0
@@ -962,8 +966,10 @@ fn run_hopper() {
 				} else if cmd == 'pause' {
 					is_paused = !is_paused
 					if is_paused {
+						sw.pause()
 						println(term.yellow('Hopping paused.'))
 					} else {
+						sw.start()
 						println(term.green('Hopping resumed.'))
 					}
 				} else if cmd == 'list' {
