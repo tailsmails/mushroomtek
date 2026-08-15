@@ -226,6 +226,7 @@ fn query_device(path string, cmd string, timeout_ms int) string {
 }
 
 fn send(path string, cmd string) {
+    println('${path} :: ${cmd}')
 	mut f := os.open_file(path, 'r+') or {
 		log_event('ERROR: Failed to open ${path} for send')
 		return
@@ -792,12 +793,8 @@ fn run_hopper() {
 		}
 	}
 
-	mut manual_cid := ''
-	is_strict_ans := safe_input('Enable Strict Mode (Lock CID to 0)? (y/n): ')
-	if is_strict_ans == 'y' {
-		manual_cid = '0'
-		println(term.yellow('Strict mode enabled (CID locked to 0 by default)'))
-	}
+	mut manual_cid := '0'
+	println(term.yellow('CID locked to 0 by default you can change it with ~CID and if you have connection problems type ~ without CID (be aware channel Lock is 0x0 mode not 0x3 while youre using channelLock without the CID param :-/)')) // because we cannot set channelLock mode to 0x3 without cid so ,,3 is wrong
 
 	mut ta_spoof_enabled := false
 	is_ta_ans := safe_input('Enable Random Tx (Timing Advance) Spoofing? (y/n): ')
@@ -867,16 +864,18 @@ fn run_hopper() {
 		}
 		time.sleep(500 * time.millisecond)
 
-		if manual_cid != '' {
-			for m in active_modems {
-				send(m, 'AT+EMMCHLCK=1,7,0,' + target + ',,3')
-			}
-			println('Searching cells (Step 1)...')
-			time.sleep(3000 * time.millisecond)
-		}
+		// if manual_cid != '' {
+		// 	for m in active_modems {
+		// 		send(m, 'AT+EMMCHLCK=1,7,0,' + target + ',,0')
+        //         send(m, 'AT+EMMCHLCK=1,7,0,' + target + ',,3')
+		// 	}
+		// 	println('Searching cells (Step 1)...')
+		// 	time.sleep(3000 * time.millisecond)
+		// }
 
 		for m in active_modems {
-			send(m, 'AT+EMMCHLCK=1,7,0,' + target + ',' + manual_cid + ',3')
+            send(m, 'AT+EMMCHLCK=1,7,0,' + target + ',' + manual_cid + ',0')
+            send(m, 'AT+EMMCHLCK=1,7,0,' + target + ',' + manual_cid + ',3')
 		}
 		log_event('LOCK ' + target + ' (CID: ' + manual_cid + ')')
 
@@ -931,20 +930,21 @@ fn run_hopper() {
 						}
 					}
 
-					if trust.score < 30 && curr.cid.len > 0 && curr.cid !in blacklist {
-						blacklist << curr.cid
-						save_blacklist(blacklist)
-						println(term.red('Auto-blacklisted ' + curr.cid))
-						log_event('AUTO_BLACKLIST ' + curr.cid)
-					}
+					// if trust.score < 30 && curr.cid.len > 0 && curr.cid !in blacklist {
+					// 	blacklist << curr.cid
+					// 	save_blacklist(blacklist)
+					// 	println(term.red('Auto-blacklisted ' + curr.cid))
+					// 	log_event('AUTO_BLACKLIST ' + curr.cid)
+					// }
 
-					if curr.cid.len > 0 && curr.cid in blacklist {
-						println(term.red('Blacklisted cell ' + curr.cid + ' rotating'))
-						log_event('BLACKLISTED ' + curr.cid)
-						for m in active_modems {
-							send(m, 'AT+EMMCHLCK=0')
-						}
-					}
+					// if curr.cid.len > 0 && curr.cid in blacklist {
+						// println(term.red('Blacklisted cell ' + curr.cid + ' rotating'))
+						// log_event('BLACKLISTED ' + curr.cid)
+						// for m in active_modems {
+						//	send(m, 'AT+EMMCHLCK=0')
+						// }
+                        // I'm working on an alternative method to switch so those logs are passive
+					// }
 
 					if curr.cid.len > 0 && is_new_cell(curr.cid) {
 						println(term.yellow('New cell: ' + curr.cid))
@@ -1063,13 +1063,14 @@ fn run_hopper() {
 					val := cmd[1..].trim_space()
 					if val.len > 0 {
 						manual_cid = val
-						println('Setting manual CID to ' + val + ' (applying 2-step lock)...')
+						println('Setting manual CID to ' + val)
+						// for m in active_modems {
+						//	send(m, 'AT+EMMCHLCK=1,7,0,' + target + ',,3')
+						// }
+						// time.sleep(1000 * time.millisecond)
 						for m in active_modems {
-							send(m, 'AT+EMMCHLCK=1,7,0,' + target + ',,3')
-						}
-						time.sleep(3000 * time.millisecond)
-						for m in active_modems {
-							send(m, 'AT+EMMCHLCK=1,7,0,' + target + ',' + val + ',3')
+                            send(m, 'AT+EMMCHLCK=1,7,0,' + target + ',' + val + ',0') // I want to prevent modem fallbacks
+                            send(m, 'AT+EMMCHLCK=1,7,0,' + target + ',' + val + ',3')
 						}
 					} else {
 						manual_cid = ''
@@ -1083,8 +1084,9 @@ fn run_hopper() {
 
 		log_event('ROTATE from ' + target)
 		for m in active_modems {
-			send(m, 'AT+EMMCHLCK=0')
-		}
+		    // send(m, 'AT+EMMCHLCK=0')
+            send(m, 'AT+EMMCHLCK=1,7,0,' + target + ',,0')
+	    }
 		time.sleep(3 * time.second)
 	}
 }
