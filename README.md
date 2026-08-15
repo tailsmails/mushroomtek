@@ -126,6 +126,9 @@ By pulling these direct control sequences out of the closed source space, we wer
 
 This tool is strictly for educational, privacy research, and personal defensive purposes.
 
+
+**WARNING AGAIN T-T:** Executing arbitrary AT commands can permanently damage radio partitions. Ensure you have a full backup of NVRAM and NVDATA with TWRP or directly with dd before using mushroomtek.
+
 ## License
 
 ![License: EUPL 1.2](https://img.shields.io/badge/License-EUPL%201.2-gray.svg)
