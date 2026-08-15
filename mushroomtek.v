@@ -80,11 +80,11 @@ fn get_secure_seed() []u32 {
 	return seed_array
 }
 
-fn apply_random_ta_spoof(path string) {
-	rand_ta_offset := rand.int_in_range(5, 60) or { 10 }
-	log_event('TA_SPOOF: Injecting volatile timing offset of ${rand_ta_offset}us')
-	send(path, 'AT+ERFTX=0,${rand_ta_offset}') // check com/mediatek/engineermode/modemtest/ModemTestActivity to get more details :-}
-}
+// fn apply_random_ta_spoof(path string) {
+	// rand_ta_offset := rand.int_in_range(5, 60) or { 10 }
+	// log_event('TA_SPOOF: Injecting volatile timing offset of ${rand_ta_offset}us')
+	// send(path, 'AT+ERFTX=0,${rand_ta_offset}') // check com/mediatek/engineermode/modemtest/ModemTestActivity to get more details :-}
+// }
 
 fn restore_system_state(active_modems []string, band_default string) {
 	println(term.bold('\n[!] Initiating system teardown. Restoring all parameters to Day One state...'))
@@ -838,9 +838,9 @@ fn run_hopper() {
 		for m in active_modems {
 			send(m, 'AT+ERAT=3')
 			send(m, band_lock_mask)
-			if ta_spoof_enabled {
-				apply_random_ta_spoof(m)
-			}
+			// if ta_spoof_enabled {
+				// apply_random_ta_spoof(m)
+			// }
 		}
 		time.sleep(500 * time.millisecond)
 
