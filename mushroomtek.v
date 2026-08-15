@@ -86,29 +86,23 @@ fn apply_random_ta_spoof(path string) {
 	send(path, 'AT+ERFTX=0,${rand_ta_offset}') // check com/mediatek/engineermode/modemtest/ModemTestActivity to get more details :-}
 }
 
-fn restore_system_state(active_modems []string, band_default string, rat_default string) {
+fn restore_system_state(active_modems []string, band_default string) {
 	println(term.bold('\n[!] Initiating system teardown. Restoring all parameters to Day One state...'))
-	
-	// if os.exists(wlan_bak_path) {
-	//	println('[*] Restoring Wi-Fi anti-tracking configuration...')
-	//	lines := os.read_lines(wlan_bak_path) or { []string{} }
-	//	for line in lines {
-	//		l := line.trim_space()
-	//		if l.len > 0 {
-	//			write_wlan_cfg(l)
-    //		}
-	//	}
-	//	println(term.green('[+] Wi-Fi settings successfully restored.'))
-	//}
 
 	println('[*] Releasing cell locks and restoring default carrier configurations...')
 	for m in active_modems {
+		send(m, 'AT+CEREG=0')
+		send(m, 'AT+CGREG=0')
 		send(m, 'AT+EMMCHLCK=0')
 		send(m, band_default)
-		send(m, rat_default)
+        send(m, 'AT+ERAT=5')
+		send(m, 'AT+ERAT=6')
+        send(m, 'AT+CFUN=0')
+		time.sleep(1500 * time.millisecond)
+		send(m, 'AT+CFUN=1')
 	}
 	
-	println(term.green('[+] Modem released from locked state. Cellular connection naturally re-establishing.'))
+	println(term.green('[+] Modem fully restored. Cellular connection re-establishing.'))
 	log_event('EXIT_AND_RESTORED_SUCCESSFULLY')
 }
 
@@ -265,17 +259,6 @@ fn get_default_band(path string) ?string {
 		l := line.trim_space()
 		if l.starts_with('+EPBSE:') {
 			return 'AT+EPBSE=' + l.all_after(':').trim_space()
-		}
-	}
-	return none
-}
-
-fn get_default_rat(path string) ?string {
-	resp := query(path, 'AT+ERAT?')
-	for line in resp.split_into_lines() {
-		l := line.trim_space()
-		if l.starts_with('+ERAT:') {
-			return 'AT+ERAT=' + l.all_after(':').trim_space()
 		}
 	}
 	return none
@@ -719,7 +702,6 @@ fn run_hopper() {
 	println(term.green('Modem verification successful. All required commands are supported.'))
 
 	mut band_default := ''
-	mut rat_default := ''
 
 	if os.exists(backup_path) {
 		backup_data := os.read_file(backup_path) or {
@@ -732,29 +714,23 @@ fn run_hopper() {
 			exit(1)
 		}
 		band_default = lines[0].trim_space()
-		rat_default = lines[1].trim_space()
 		println(term.green('Loaded default settings from backup file.'))
 	} else {
 		band_opt := get_default_band(active_modems[0]) or {
 			println(term.red('Error: Failed to read default band settings from modem.'))
 			exit(1)
 		}
-		rat_opt := get_default_rat(active_modems[0]) or {
-			println(term.red('Error: Failed to read default RAT settings from modem.'))
-			exit(1)
-		}
 		band_default = band_opt
-		rat_default = rat_opt
 
-		os.write_file(backup_path, '${band_default}\n${rat_default}') or {
+		os.write_file(backup_path, '${band_default}') or {
 			println(term.red('Error: Failed to create backup file ' + backup_path))
 			exit(1)
 		}
 		println(term.green('Backup of default settings successfully saved.'))
 	}
 
-	os.signal_opt(.int, fn [active_modems, band_default, rat_default] (_ os.Signal) {
-		restore_system_state(active_modems, band_default, rat_default)
+	os.signal_opt(.int, fn [active_modems, band_default] (_ os.Signal) {
+		restore_system_state(active_modems, band_default)
 		exit(0)
 	}) or {}
 
