@@ -104,24 +104,6 @@ su -c ./mushroomtek wlan restore
 
 *(Note: The `apply` command will refuse to overwrite an existing backup to ensure your original factory default state is never lost. All WLAN GhostMe changes are volatile and will revert automatically upon a WiFi toggle or device reboot.)*
 
-## Development Story: Decompiling and Bypassing JNI
-
-Instead of wrestling with Android's massive Java framework, complex JNI binders, and bloated background telephony services, we went under the hood.
-
-We reverse engineered MediaTek's proprietary Engineering Mode application and decompiled `com.mediatek.engineermode.modemtest.ModemTestActivity` and etc. This gave us the exact blueprint we needed: the proprietary AT command sequences (like `AT+EPBSE` for band configuration, `AT+ERAT` for radio access technology switching, and `AT+EMMCHLCK` for absolute frequency locking) that the OS uses to command the modem.
-
-For the WiFi side, we initially wanted to call the proprietary WiFi tuning functions directly from MediaTek's engineering library `libem_wifi_jni.so`. But that library pulled in Android runtimes, which crashed immediately without a running JVM. When we dumped the JNI string literals, we also found that MediaTek had compiled out the actual power writing logic anyway.
-
-That turned out to be a dead end for a few reasons:
-
-* **JVM Dependency Aborts:** Loading `libem_wifi_jni.so` dynamically pulls in `libandroid_runtime.so`. The static initializers in the Android runtime expect to find a running Java Virtual Machine (Zygote context). Running this from a raw shell without a JVM environment meant the linker immediately failed with a SIGABRT, crashing the process.
-* **Hollow C++ Classes:** Even if we managed to isolate the symbols, calling class methods like `GetATParam` requires a valid `this` pointer. Mocking a C++ object with a blank 512-byte heap buffer caused instant segmentation faults (SIGSEGV). The compiled code tried to read uninitialized internal variables, like the socket descriptor (`m_i4Fd`) or the adapter pointer (`m_pAdapter`), and immediately dereferenced garbage.
-* **Vendor Stubs (The "Omitted" Trick):** When we dumped the JNI string literals, we found that MediaTek had compiled out the actual power-writing logic in user-space anyway. Functions like `setOutputPower` and `setTXMaxPowerToEEProm` were just hollow stubs that printed debug strings like `setOutputPower:omitted` and returned `0` without taking any action.
-
-So we hooked `strace` to the process and watched the system calls. We saw the JNI library sending private IOCTLs to the active kernel WiFi driver, which pointed us straight to the procfs nodes under `/proc/net/wlan/`. By writing directly to `/proc/net/wlan/cfg` and `/proc/net/wlan/mcr`, we bypassed the JNI userspace library entirely. This gave us crash free, zero dependency control over the physical transmit registers and spatial streams in normal Station Mode.
-
-By pulling these direct control sequences out of the closed source space, we were able to implement them directly in a raw, lightweight V binary that communicates straight with the baseband and WiFi driver, completely bypassing the Android framework.
-
 ## Disclaimer
 
 This tool is strictly for educational, privacy research, and personal defensive purposes.
