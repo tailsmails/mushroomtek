@@ -108,7 +108,7 @@ su -c ./mushroomtek wlan restore
 
 Instead of wrestling with Android's massive Java framework, complex JNI binders, and bloated background telephony services, we went under the hood.
 
-We reverse engineered MediaTek's proprietary Engineering Mode application and decompiled `com.mediatek.engineermode.modemtest.ModemTestActivity`. This gave us the exact blueprint we needed: the proprietary AT command sequences (like `AT+EPBSE` for band configuration, `AT+ERAT` for radio access technology switching, and `AT+EMMCHLCK` for absolute frequency locking) that the OS uses to command the modem.
+We reverse engineered MediaTek's proprietary Engineering Mode application and decompiled `com.mediatek.engineermode.modemtest.ModemTestActivity` and etc. This gave us the exact blueprint we needed: the proprietary AT command sequences (like `AT+EPBSE` for band configuration, `AT+ERAT` for radio access technology switching, and `AT+EMMCHLCK` for absolute frequency locking) that the OS uses to command the modem.
 
 For the WiFi side, we initially wanted to call the proprietary WiFi tuning functions directly from MediaTek's engineering library `libem_wifi_jni.so`. But that library pulled in Android runtimes, which crashed immediately without a running JVM. When we dumped the JNI string literals, we also found that MediaTek had compiled out the actual power writing logic anyway.
 
