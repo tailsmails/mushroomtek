@@ -893,8 +893,7 @@ fn run_hopper() {
 			if tick >= 25 && !has_input() {
 				tick = 0
 				for m in active_modems {
-					send(m, 'AT+EMMCHLCK=1,7,0,' + target + ',,0')
-					time.sleep(200 * time.millisecond)
+					send(m, 'AT+EMMCHLCK=0')
 					send(m, 'AT+EMMCHLCK=1,7,0,' + target + ',' + manual_cid + ',0')
 					send(m, 'AT+EMMCHLCK=1,7,0,' + target + ',' + manual_cid + ',3')
 				}
