@@ -892,6 +892,12 @@ fn run_hopper() {
 			tick++
 			if tick >= 25 && !has_input() {
 				tick = 0
+				for m in active_modems {
+					send(m, 'AT+EMMCHLCK=1,7,0,' + target + ',,0')
+					time.sleep(200 * time.millisecond)
+					send(m, 'AT+EMMCHLCK=1,7,0,' + target + ',' + manual_cid + ',0')
+					send(m, 'AT+EMMCHLCK=1,7,0,' + target + ',' + manual_cid + ',3')
+				}
 				mut curr := get_cell_state(active_modems[0])
 				if curr.lac.len > 0 {
 					check_anomalies(prev_state, curr, active_modems)
