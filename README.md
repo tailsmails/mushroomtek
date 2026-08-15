@@ -111,6 +111,19 @@ This tool is strictly for educational, privacy research, and personal defensive 
 
 **WARNING AGAIN T-T:** Executing arbitrary AT commands can permanently damage radio partitions. Ensure you have a full backup of NVRAM and NVDATA with TWRP or directly with dd before using mushroomtek.
 
+<details>
+<summary><b>AND My Last Warning (Click to reveal side effects)</b></summary>
+
+<br>
+
+**Do not overuse this tool, because:**
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/tailsmails/mushroomtek/refs/heads/main/side_effect.jpg" alt="Side Effects" width="500" />
+</p>
+
+</details>
+
 ## License
 
 ![License: EUPL 1.2](https://img.shields.io/badge/License-EUPL%201.2-gray.svg)
