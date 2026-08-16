@@ -91,6 +91,7 @@ fn restore_system_state(active_modems []string, band_default string) {
 
 	println('[*] Releasing cell locks and restoring default carrier configurations...')
 	for m in active_modems {
+        send(m, 'AT+EGMC=1,"rx_path",0')
 		send(m, 'AT+CEREG=0')
 		send(m, 'AT+CGREG=0')
 		send(m, 'AT+EMMCHLCK=0')
@@ -683,7 +684,7 @@ fn run_hopper() {
 	}
 
 	println('Checking required AT command support on modem...')
-	required_cmds := ['EMMCHLCK', 'EPBSE', 'ERAT', 'ECELL', 'CEREG', 'CGREG', 'CSQ', 'CFUN']
+	required_cmds := ['EMMCHLCK', 'EPBSE', 'ERAT', 'ECELL', 'CEREG', 'CGREG', 'CSQ', 'CFUN', 'EGMC', 'ESCRI']
 	mut unsupported := []string{}
 	for req in required_cmds {
 		if !check_command_support(active_modems[0], req) {
@@ -736,6 +737,8 @@ fn run_hopper() {
 
 	for m in active_modems {
         send(m, 'AT+ESCRI')
+        time.sleep(200 * time.millisecond)
+        send(m, 'AT+EGMC=1,"rx_path",1,1,1,1,1,1') // check com/mediatek/engineermode/antenna/AntennaActivity
         time.sleep(200 * time.millisecond)
 		send(m, 'AT+CEREG=2')
 		time.sleep(200 * time.millisecond)
