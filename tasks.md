@@ -3,3 +3,4 @@
 - [ ] Support GSM and WCDMA and so on (call without VoLTE)
 - [ ] Bluetooth :-]
 - [x] Set custom TA (very hard but not impossible)
+- [ ] Make checkers more stable and more accurate
