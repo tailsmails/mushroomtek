@@ -735,6 +735,8 @@ fn run_hopper() {
 	}) or {}
 
 	for m in active_modems {
+        send(m, 'AT+ESCRI')
+        time.sleep(200 * time.millisecond)
 		send(m, 'AT+CEREG=2')
 		time.sleep(200 * time.millisecond)
 		send(m, 'AT+CGREG=3')
@@ -776,12 +778,12 @@ fn run_hopper() {
 		println(term.yellow('Strict mode enabled (CID locked to 0 by default)'))
 	}
     
-	mut ta_spoof_enabled := false
-	is_ta_ans := safe_input('Enable Random Tx (Timing Advance) Spoofing? (y/n): ')
-	if is_ta_ans == 'y' {
-		ta_spoof_enabled = true
-		println(term.yellow('Random Timing Advance Spoofing enabled.'))
-	}
+	// mut ta_spoof_enabled := false
+	// is_ta_ans := safe_input('Enable Random Tx (Timing Advance) Spoofing? (y/n): ')
+	// if is_ta_ans == 'y' {
+	// 	ta_spoof_enabled = true
+	// 	println(term.yellow('Random Timing Advance Spoofing enabled.'))
+	// }
 
 	mut whitelist := load_list()
 	if whitelist.len > 0 {
@@ -1072,6 +1074,7 @@ fn run_hopper() {
 		log_event('ROTATE from ' + target)
 		for m in active_modems {
             send(m, 'AT+EMMCHLCK=1,7,0,' + target + ',,0')
+            send(m, 'AT+ESCRI') // it's standard before changing the chlock
 	    }
 		time.sleep(3 * time.second)
 	}
